@@ -1,0 +1,30 @@
+# Dependencias
+node_modules/
+.pnp/
+.pnp.js
+
+# Compilados
+dist/
+build/
+*.tsbuildinfo
+
+# Entorno (las claves NUNCA van al repo)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Cobertura / test
+coverage/
+
+# Editores
+.vscode/
+.idea/
+*.swp
