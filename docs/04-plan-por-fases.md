@@ -241,13 +241,40 @@ la bandeja cubre sus 4 estados (`06` §3).
 4 reglas demostradas por tests y los estados de envío del chat (carga, error con reintento)
 cubiertos (`06` §3).
 
-## 7. Fase 6 — Parte 3: `consultas.sql`
+## 7. Fase 6 — Parte 3: `consultas.sql` ✅ (hecha)
 
-- [ ] Las 5 consultas, cada una en su bloque, comentadas solo donde la intención no es obvia.
-- [ ] Verificar contra datos de ejemplo con `EXPLAIN (ANALYZE, BUFFERS)` (generar dataset de prueba
+- [x] Las 5 consultas, cada una en su bloque, comentadas solo donde la intención no es obvia.
+- [x] Verificar contra datos de ejemplo con `EXPLAIN (ANALYZE, BUFFERS)` (generar dataset de prueba
       con `generate_series`: salas × 12 meses × estados, incluir casos en cero).
-- [ ] Consulta 5 (índices): responder en ≤5 líneas y **demostrarlo en el propio archivo SQL**
+- [x] Consulta 5 (índices): responder en ≤5 líneas y **demostrarlo en el propio archivo SQL**
       (crear índices en un bloque comentado + `EXPLAIN` antes/después).
+
+**Verificación (BD aparte `parte3`, regenerada y ejecutada de cero):** 7 salas · 100.003 clientes ·
+101.207 reservas · 101.232 líneas · **5.000.007 pagos**. Resultados contrastados a mano:
+
+| Punto | Esperado | Obtenido |
+|---|---|---|
+| 1 morosos | caso controlado: 70.000 y ~61 días; excluye pagado y reciente | ✅ 16.165 filas |
+| 2 cruzadas | sale el solape `(9000021,9000022)`; **no** sale la colindancia 10:00/10:00 | ✅ |
+| 3 retícula | 7 salas × 12 meses = **84**; sala 7 en cero, sala 6 en 3 meses | ✅ 84 |
+| 4 inconsistencias | A=25, B=16, intersección=8 → **33** (`ambas` 8 / `booking_lines` 17 / `pagos` 8) | ✅ 33 |
+
+**Mediciones de la 5** (mismo dataset, `EXPLAIN (ANALYZE, BUFFERS)`): **9.259 ms → 3.353 ms (−64 %)**
+pasando de `Seq Scan` a `Index Only Scan`; índices 136 MB + 3,1 MB. **Bonus:** la consulta 2
+costaba **143,6 s** (250.790.004 pares descartados por el hash join, `room_id` sin índice) → con
+índice GiST de intervalo y solape por `&&` baja a **2,3 s (62×)**; queda anotado en el propio archivo.
+
+### Notas de ejecución de la Fase 6
+
+- **El script de datos de ejemplo que promete el PDF no viene** → decisión: dataset propio con
+  `generate_series` (anexo A del entregable, reproducible). Ambigüedad anotada para el README.
+- **Ejecutar en una BD aparte:** `rooms`/`bookings`/`booking_lines` chocan con la Parte 1.
+- **Dataset v1 descartado:** con 1.000.000 de reservas en 450 días había ~444 reservas por sala y
+  día → cientos de millones de solapes artificiales (que ni siquiera respetan la regla de la propia
+  app) y la consulta 2 no terminaba. Regenerado con **huecos no solapados por construcción**.
+- **Ajuste tras validar:** los casos límite se expresan respecto a `now()`, así que el nº de filas
+  de la consulta 2 varía con la hora de ejecución → no se cita una cifra fija, solo las estables.
+
 
 ## 8. Fase 7 — Parte 4: `INCIDENTE.md` ✅ (hecha)
 
