@@ -33,6 +33,15 @@ El orden **no** sigue la numeración ordinal: las fases 6 y 7 se ejecutan antes 
 tienen mejor relación peso/esfuerzo (Parte 4 = 15 % con la tarea más breve y puramente
 analítica; Parte 3 = 10 % con trabajo de escritura sobre un esquema ya conocido).
 
+> **Decisión confirmada (2026-10-26), al cerrar la Parte 1 (fases 0–3):** se revisó el orden y se
+> mantuvo `7 → 6 → 4 → 5 → 8`, sin desviaciones. Se valoró empezar por la Fase 4 (continuidad con
+> el código de `bookings`, pestaña visible en el admin) y se descartó: el plan prioriza **asegurar
+> pronto el peso barato** — 7 + 6 llevan de 40 % a 65 % con dos entregables de solo escritura y sin
+> riesgo de integración — antes de acometer las dos integraciones difíciles (outbox e IA) en el
+> reloj de 48 h. Verificado además que **ninguna dependencia técnica lo obliga**: la Fase 7 es solo
+> Markdown, la 6 trabaja sobre un esquema distinto al nuestro y la 4 solo depende de la Fase 2
+> (cerrada). Si el orden cambiara, queda escrito aquí y en el README (regla 3 del PDF).
+
 > **Métrica única:** el avance se mide con la **tabla de pesos** de arriba (ya sea el progreso
 > real: fase cerrada = suma su bloque). **El tiempo no es variable de planificación** en este
 > documento: no hay estimaciones de horas ni líneas temporales. Si algo va lento, se aplica el
@@ -240,12 +249,19 @@ cubiertos (`06` §3).
 - [ ] Consulta 5 (índices): responder en ≤5 líneas y **demostrarlo en el propio archivo SQL**
       (crear índices en un bloque comentado + `EXPLAIN` antes/después).
 
-## 8. Fase 7 — Parte 4: `INCIDENTE.md`
+## 8. Fase 7 — Parte 4: `INCIDENTE.md` ✅ (hecha)
 
-- [ ] Máximo 2 páginas, método visible: hipótesis → evidencia (consultas/logs) → remediación →
+- [x] Máximo 2 páginas, método visible: hipótesis → evidencia (consultas/logs) → remediación →
       prevención → mensaje al comercial. Contenido completo en
       `03-decisiones-tecnicas-criticas.md` §9.
-- [ ] Incluir el SQL de las consultas de diagnóstico como bloque listo para pegar.
+- [x] Incluir el SQL de las consultas de diagnóstico como bloque listo para pegar.
+
+**Verificación:** `INCIDENTE.md` en la raíz · ~2 páginas (983 palabras, 114 líneas) · método visible
+en 6 secciones (hipótesis · evidencia · validación · remediación · prevención · comunicación) ·
+2 bloques SQL **top-level** (listos para copiar) · mensaje al comercial en **exactamente 4 líneas** ·
+cubre los 4 puntos de `01` §12 (incluye quién aprueba y la prueba previa con *dry-run*).
+
+> El orden de ejecución (7 → 6 → 4) quedó confirmado y documentado en §0.
 
 ## 9. Fase 8 — Cierre: README + Uso de IA + pulido + sustentación
 
