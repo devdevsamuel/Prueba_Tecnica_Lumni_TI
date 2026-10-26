@@ -19,3 +19,10 @@ INSERT INTO rooms (id, name, size, capacity, hourly_rate) VALUES
   (2, 'Sala Mediana', 'medium', 8,  70000.00),
   (3, 'Sala Grande',  'large', 12, 120000.00)
 ON CONFLICT (id) DO NOTHING;
+
+-- Los inserts de arriba fijan ids explícitos, pero eso NO avanza la secuencia
+-- del IDENTITY. Sin este ajuste, el siguiente INSERT sin id intentaría reusar el
+-- 1 y fallaría con duplicado en la clave primaria. Se alinea la secuencia al
+-- mayor id existente (idempotente y seguro con tablas vacías).
+SELECT setval(pg_get_serial_sequence('users', 'id'),  (SELECT COALESCE(MAX(id), 0) FROM users));
+SELECT setval(pg_get_serial_sequence('rooms', 'id'),  (SELECT COALESCE(MAX(id), 0) FROM rooms));

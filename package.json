@@ -16,7 +16,7 @@
     "migrate": "npm run build -w server && node --env-file-if-exists=.env server/dist/db/migrate.js",
     "seed": "sh scripts/seed.sh",
     "test": "npm run test -w server",
-    "typecheck": "tsc --noEmit -p server && tsc --noEmit -p web"
+    "typecheck": "tsc --noEmit -p server/tsconfig.test.json && tsc --noEmit -p web"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

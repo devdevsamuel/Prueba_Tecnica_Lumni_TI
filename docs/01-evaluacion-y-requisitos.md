@@ -336,3 +336,7 @@ Problema en el modelo: `before_save :regenerate_invoice` **destruye y reconstruy
 9. **Capacidad de las salas**: el PDF solo define `size` (pequeña/mediana/grande), pero el
    ejemplo del chat habla de *"6 personas"*. → **Decisión:** columna `rooms.capacity`
    (`small=4`, `medium=8`, `large=12`) y el asistente filtra por ella.
+10. **Precio de los servicios adicionales**: el PDF solo nombra *proyector* y *café* junto a
+    `amount numeric(14,2)`, sin importe. → **Decisión:** **tarifa fija por reserva** —
+    **proyector $10.000**, **café $5.000** (COP). Entran en el `total` y siguen aplicándose las
+    reglas del punto 3 (descuento y recargo solo sobre la tarifa horaria).

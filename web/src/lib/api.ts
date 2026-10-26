@@ -4,7 +4,7 @@
  * Errores en el contrato `{ error: { code, message } }` de docs/01 §5.
  */
 export interface ApiErrorBody {
-  error: { code: string; message: string };
+  error: { code: string; message: string; details?: unknown };
 }
 
 export class ApiError extends Error {
@@ -12,6 +12,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extras del error (p. ej. el `suggestedSlot` de un 409). */
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -39,6 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       response.status,
       body?.error?.code ?? 'unknown',
       body?.error?.message ?? `Error del servidor (${response.status}).`,
+      body?.error?.details,
     );
   }
   return (await response.json()) as T;

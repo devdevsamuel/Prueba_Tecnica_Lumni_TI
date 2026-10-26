@@ -62,11 +62,11 @@ analítica; Parte 3 = 10 % con trabajo de escritura sobre un esquema ya conocido
 
 **Criterio de "hecho":** `npm run typecheck` verde, `npm run dev` levanta front+back, `npm run migrate` corre de cero.
 
-## 2. Fase 1 — Cotizador → **pantalla del cotizador**
+## 2. Fase 1 — Cotizador → **pantalla del cotizador** ✅ (hecha)
 
-- [ ] `quotes/quote.ts` **función pura**: tarifas, bloques de 30 min, horario Lun–Sáb 7:00–21:00,
+- [x] `quotes/quote.ts` **función pura**: tarifas, bloques de 30 min, horario Lun–Sáb 7:00–21:00,
       domingo cerrado, descuento escalonado 10 %/20 %, recargo 25 % sobre valor ya descontado.
-- [ ] **Tests unitarios del cotizador** (`node:test`) — matriz obligatoria (contraste con `01` §4):
+- [x] **Tests unitarios del cotizador** (`node:test`) — matriz obligatoria (contraste con `01` §4):
 
   | Caso | Esperado |
   |---|---|
@@ -77,64 +77,96 @@ analítica; Parte 3 = 10 % con trabajo de escritura sobre un esquema ya conocido
   | inicio 6:30 | rechazo |
   | inicio 7:00 | OK |
   | fin **exactamente 21:00** | OK |
-  | fin 21:01 | rechazo |
+  | fin > 21:00 (p. ej. 21:30) | rechazo |
   | domingo | cerrado (mensaje claro) |
   | 3 h 30 → 0 %; 4 h → 10 %; 7 h 30 → 10 %; **8 h → 20 %**; 10 h → 20 % | escalonado (no acumulativo) |
   | sábado | recargo = (base − descuento) × 1,25 |
   | termina 10:00 / empieza 10:00 | **no** se cruzan (solape estricto) |
   | horario ocupado | `canBook=false` + motivo + `suggestedSlot` del mismo día |
   | fecha/hora en el pasado | rechazo |
-- [ ] Disponibilidad (solape estricto) + `findNextSlot` (siguiente horario libre del mismo día).
-- [ ] `POST /api/quotes` con validación zod → `{ base, discount, surcharge, total, canBook, reason, suggestedSlot }`.
-- [ ] `GET /api/rooms`.
-- [ ] **UI:** formulario (sala, fecha, hora, duración), desglose, estado "no disponible" con motivo
+- [x] Disponibilidad (solape estricto) + `findNextSlot` (siguiente horario libre del mismo día).
+- [x] `POST /api/quotes` con validación zod → `{ base, discount, surcharge, total, canBook, reason, suggestedSlot }`.
+- [x] `GET /api/rooms`.
+- [x] **UI:** formulario (sala, fecha, hora, duración), desglose, estado "no disponible" con motivo
       y sugerencia clicable (rellena el formulario).
-- [ ] **UX (`06` §4):** validación inline al salir del campo, estado de carga del botón "Cotizar"
+- [x] **UX (`06` §4):** validación inline al salir del campo, estado de carga del botón "Cotizar"
       y error de red con reintento sin perder lo escrito.
-- [ ] **a11y (`05` §3–4):** `<label>` visible en cada campo, `<fieldset>/<legend>` en duración,
+- [x] **a11y (`05` §3–4):** `<label>` visible en cada campo, `<fieldset>/<legend>` en duración,
       errores con `aria-invalid` + `aria-describedby` y resultado de la cotización en
       `aria-live="polite"`.
-- [ ] Tests de integración: `fetch` contra servidor real en puerto efímero (0 dependencias extras).
+- [x] Tests de integración: `fetch` contra servidor real en puerto efímero (0 dependencias extras).
 
 **Criterio de "hecho":** todas las reglas del PDF probadas, una pantalla que las refleja con sus
 4 estados de interfaz y validación inline (`06` §3–4).
 
-## 3. Fase 2 — Reserva por pasos → **wizard de 3 pasos**
+### Notas de ejecución de la Fase 1 (desviaciones y bugs corregidos)
 
-- [ ] `state.ts` máquina de estados + **tests de transiciones** (legales e ilegales).
-- [ ] CRUD de borradores: paso 1 (datos cliente), paso 2 (sala/horario prellenado desde la
+- **"fin 21:01" (la matriz original):** con duraciones restringidas a bloques de 30 min, no existe
+  un fin a las 21:01. El test cubre la regla real —**cualquier fin > 21:00 se rechaza**— usando el
+  primer fin imposible alcanzable (21:30). El fin exacto 21:00 sí se prueba aparte.
+- **`<fieldset>/<legend>`:** en vez de envolver solo la duración (redundante con su `<label>`), se
+  agrupan *hora de inicio* y *duración* bajo la leyenda **"Horario de la reserva"**; la duración
+  queda dentro de un `fieldset/legend`, con su `<label>` visible propio.
+- **Bug de Fase 0 corregido aquí (limitaba la Fase 1):** `db/seed.sql` insertaba `users` y `rooms`
+  con ids explícitos, lo que **no avanza la secuencia** del `IDENTITY`; el siguiente `INSERT` sin
+  id chocaba en la clave primaria. Se añadió `setval(pg_get_serial_sequence(...))` tras los inserts.
+- **Bug de lógica destapado por el smoke test:** `findNextSlot` recortaba la sugerencia a la hora
+  del reloj *actual* aunque la fecha pedida fuese **futura** (sugería 12:30 en vez de 07:00). Ya solo
+  aplica ese recorte si la fecha es hoy. Cubierto con test de regresión.
+
+## 3. Fase 2 — Reserva por pasos → **wizard de 3 pasos** ✅ (hecha)
+
+- [x] `state.ts` máquina de estados + **tests de transiciones** (legales e ilegales).
+- [x] CRUD de borradores: paso 1 (datos cliente), paso 2 (sala/horario prellenado desde la
       cotización), paso 3 (servicios proyector/café como `booking_lines`).
-- [ ] **Retomable:** id de borrador en cookie/URL → `GET /api/bookings/:id` restaura el wizard.
-- [ ] `POST /api/bookings/:id/confirm` idempotente (UPDATE condicionado a `draft`) + precio congelado.
-- [ ] Constraint de exclusión → 409 con siguiente horario cuando hay conflicto.
-- [ ] Cancelación con motivo obligatorio (cliente sobre su propia reserva).
-- [ ] **Tests:**
+- [x] **Retomable:** id de borrador en URL (`?borrador=`) + `localStorage` → `GET /api/bookings/:id`
+      restaura el wizard (sobrevive refresco **y** cierre del navegador).
+- [x] `POST /api/bookings/:id/confirm` idempotente (UPDATE condicionado a `draft`) + precio congelado.
+- [x] Constraint de exclusión → 409 con siguiente horario cuando hay conflicto.
+- [x] Cancelación con motivo obligatorio (cliente sobre su propia reserva).
+- [x] **Tests:**
   - transiciones legales/ilegales → `409`;
-  - **idempotencia:** misma reserva confirmada 2 veces → respuesta idéntica, `total` y
-    `booking_lines` sin cambios, **una sola fila** en `email_outbox`;
+  - **idempotencia:** misma reserva confirmada 2 veces → respuesta idéntica y `total` +
+    `booking_lines` sin cambios (sin filas de reserva duplicadas);
   - **concurrencia (escenario determinista):** dos `POST /api/bookings/:id/confirm` **en paralelo**
     sobre reservas distintas con la misma sala y horario → **1×`201` + 1×`409`**; se verifica que
-    la reserva ganadora conserva `total`/`booking_lines` pactados y que existe **exactamente 1
-    correo** en el outbox.
-- [ ] **UI:** Stepper de 3 pasos, prellenado, servicios, resumen y confirmación; aviso "borrador retomado".
-- [ ] **UX (`06` §4):** retroceder sin perder datos, resumen explícito antes de confirmar y
+    la reserva ganadora conserva `total`/`booking_lines` pactados.
+
+  > **Reparto del outbox (decisión):** las aserciones sobre `email_outbox` (una sola fila /
+  > exactamente un correo) se comprueban en la **Fase 4**, cuando se crea la tabla y la inserción
+  > transaccional. La Fase 2 acredita idempotencia y concurrencia con `total` + `booking_lines`.
+- [x] **UI:** Stepper de 3 pasos, prellenado, servicios, resumen y confirmación; aviso "borrador retomado".
+- [x] **UX (`06` §4):** retroceder sin perder datos, resumen explícito antes de confirmar y
       pantalla final con la próxima acción.
-- [ ] **a11y (`05` §1–4):** stepper como `<ol>` con `aria-current="step"`, validación de cada paso
+- [x] **a11y (`05` §1–4):** stepper como `<ol>` con `aria-current="step"`, validación de cada paso
       anunciada y aviso "borrador retomado" en región viva.
 
 **Criterio de "hecho":** el flujo completo cotizar → 3 pasos → confirmar funciona en el navegador
 sin pantallas en blanco (4 estados cubiertos, `06` §3), las dos garantías tienen prueba
 automatizada y la UI cumple los patrones UX de `06` §4. **Parte 1 cerrada al 100 %.**
 
-## 4. Fase 3 — Admin + autenticación → **UI del admin**
+### Notas de ejecución de la Fase 2
 
-- [ ] Login con scrypt + cookie firmada HMAC; `requireRole('admin')`.
-- [ ] `GET /api/admin/bookings` paginado + filtros por estado y sala (validados).
-- [ ] Detalle de reserva con líneas y cancelar con motivo.
-- [ ] **UI:** pantalla de login, listado con paginación y filtros, detalle + modal de cancelación.
-- [ ] **UX (`06` §4):** filtros y página reflejados en la URL; estado vacío distinto para "sin
+- **Migración `0002_drafts.sql` (adición al plan):** `bookings` tenía `customer_*`, `room_id`,
+  `starts_at` y `ends_at` en `NOT NULL`, lo que impedía guardar un borrador a medio hacer —lo que
+  exige *"cada paso se guarda como borrador"* y el acceso directo por el enlace "Reservar". Esos
+  campos pasan a ser obligatorios **solo al confirmar** (los valida el servicio).
+- **Servicios con tarifa fija** (decisión `01` §14.10): proyector $10.000, café $5.000, por reserva.
+- **`booking_lines` de descuento en negativo** para que `SUM(lines) = total` (lo exige la consulta
+  de inconsistencias de la Parte 3).
+- **Bugs encontrados y corregidos durante la implementación:** validar antes de insertar (un
+  domingo no dejaba borrador huérfano junto al `422`); `safeParse(req.params)` (no `.id`); el test
+  de integración filtraba por `room_id` y **no borraba los borradores con `room_id = NULL`**.
+
+## 4. Fase 3 — Admin + autenticación → **UI del admin** ✅ (hecha)
+
+- [x] Login con scrypt + cookie firmada HMAC; `requireRole('admin')`.
+- [x] `GET /api/admin/bookings` paginado + filtros por estado y sala (validados).
+- [x] Detalle de reserva con líneas y cancelar con motivo.
+- [x] **UI:** pantalla de login, listado con paginación y filtros, detalle + modal de cancelación.
+- [x] **UX (`06` §4):** filtros y página reflejados en la URL; estado vacío distinto para "sin
       reservas" y "sin resultados del filtro" (acción "limpiar filtros").
-- [ ] **a11y (`05` §1–2):** tabla con `<th scope>`, paginación con nombres accesibles y
+- [x] **a11y (`05` §1–2):** tabla con `<th scope>`, paginación con nombres accesibles y
       `aria-current="page"`; modal de cancelación con trampa de foco, cierre con **Esc** y
       devolución del foco al disparador.
 
@@ -143,6 +175,23 @@ contrato (`01` §2.3) están cubiertos por tests: **`401`** sin sesión en `/api
 **`403`** cuando el cliente intenta acceder, **`400`** con `status` o `room` inválidos.
 UX de `06` §4 verificada: los filtros sobreviven al refresco (URL) y el listado cubre sus
 4 estados.
+
+> **Parte 1 (40 %) cerrada con esta fase.**
+
+### Notas de ejecución de la Fase 3
+
+- **Migración `0003_sessions`** (ya prevista en `01` §6 y `03` §8): la cookie `sid` es
+  `base64(payload).hmac-sha256` y la tabla aporta expiración y **revocación** — sin ella, un
+  cookie robado seguiría válido y el logout no cortaría nada. TTL de 24 h; `Secure` solo en
+  producción (`NODE_ENV`).
+- **Verificado contra el seed real:** hay test que comprueba que `coworking2026` valida con el
+  hash de `db/seed.sql` (si el formato no cuadrara, el login fallaría en silencio).
+- **Cancelación del cliente:** se mantiene **sin control de propiedad** (el id del borrador es la
+  credencial). Documentado como decisión: el PDF no exige auth de cliente en el wizard, añadiría
+  un paso extra y rompería los tests de la Fase 2.
+- **Aislamiento de tests:** los archivos de integración corren **en paralelo sobre la misma BD**,
+  así que las cifras exactas se acotan a las salas propias de cada archivo (lo global se afirma
+  como mínimo). Causa de un fallo que no era de la API.
 
 ## 5. Fase 4 — Parte 2.1: correo en segundo plano → **pestaña de correos en admin**
 
@@ -153,7 +202,8 @@ UX de `06` §4 verificada: los filtros sobreviven al refresco (URL) y el listado
 - [ ] `GET /api/admin/emails` y su UI (pendiente / reintentando / fallido + detalle del correo).
 - [ ] **UX (`06` §4):** estados vacío/carga/error de la bandeja y detalle del correo legible
       (asunto, destinatario, timestamps).
-- [ ] **Tests:** idempotencia (2 workers → 1 correo), backoff, agotamiento a `failed`, cola tras reinicio.
+- [ ] **Tests:** idempotencia (**doble confirmación → exactamente 1 fila en `email_outbox`**, y
+      2 workers en paralelo → 1 correo), backoff, agotamiento a `failed`, cola tras reinicio.
 
 **Criterio de "hecho":** se ve el correo salido en el admin, los reintentos se observan en vivo y
 la bandeja cubre sus 4 estados (`06` §3).

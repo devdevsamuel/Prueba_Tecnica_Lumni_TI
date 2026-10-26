@@ -48,10 +48,13 @@ CREATE INDEX bookings_room_id_idx ON bookings (room_id);
 -- dos confirmaciones simultáneas de la misma sala y horario → la segunda
 -- choca con el constraint (23P01) y la API responde 409. Solo `confirmed`
 -- bloquea (enunciado literal: "no puede cruzarse con otra reserva confirmada").
--- Ojo: `starts_at`/`ends_at` son timestamptz → el rango debe ser `tstzrange`;
--- `tsrange` (timestamp sin zona) no resuelve y la migración entera falla.
+-- Dos detalles que rompían la migración y conviene no olvidar:
+--   1) `starts_at`/`ends_at` son timestamptz → el rango es `tstzrange`, no `tsrange`
+--      (`tsrange` espera timestamp sin zona y no resuelve → error 42883).
+--   2) El access method es `gist`, no `btree`: btree_gist aporta opclases "tipo btree"
+--      al índice GiST, pero && solo pertenece a la familia range_ops de GiST (→ 42P10).
 ALTER TABLE bookings ADD CONSTRAINT no_room_overlap
-  EXCLUDE USING btree (
+  EXCLUDE USING gist (
     room_id  WITH =,
     tstzrange(starts_at, ends_at) WITH &&
   ) WHERE (status = 'confirmed');

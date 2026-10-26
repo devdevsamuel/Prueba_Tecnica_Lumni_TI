@@ -16,14 +16,19 @@
 CREATE EXTENSION IF NOT EXISTS btree_gist;   -- viene con PostgreSQL, sin dependencias externas
 
 ALTER TABLE bookings ADD CONSTRAINT no_room_overlap
-  EXCLUDE USING btree (
+  EXCLUDE USING gist (
     room_id  WITH =,
     tstzrange(starts_at, ends_at) WITH &&
   ) WHERE (status = 'confirmed');
 ```
 
-> `tstzrange`, no `tsrange`: las columnas son `timestamptz`. `tsrange` espera `timestamp` sin
-> zona, no resuelve la función y PostgreSQL aborta la migración completa (`42883`).
+> Dos detalles que rompen esta sentencia si se copian a medias:
+> - **`tstzrange`, no `tsrange`:** las columnas son `timestamptz`; `tsrange` espera `timestamp`
+>   sin zona, no resuelve la función y PostgreSQL aborta la migración completa (`42883`).
+> - **`USING gist`, no `USING btree`:** `btree_gist` da opclases "tipo btree" al índice **GiST**;
+>   el operador `&&` solo pertenece a la familia `range_ops` de GiST, así que con `btree`
+>   falla (`42P10`). Verificado en local: dos `confirmed` solapadas → `23P01`; frontera exacta
+>   (termina 10:00 / empieza 10:00) → permitida; `draft` → no bloquea.
 
 - La **segunda transacción** choca con el constraint → error `23P01` → la API responde **409** con
   el motivo y el **siguiente horario disponible** (ya calculado por el cotizador).

@@ -412,3 +412,216 @@ a:hover {
 .stack-lg > * + * {
   margin-top: var(--space-5);
 }
+
+/* ---------- Cotizador (Fase 1) ---------- */
+.fieldset {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+.fieldset__legend {
+  padding: 0 var(--space-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--gray-700);
+}
+.form-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+/* Los <a> con aspecto de botón: sin subrayado (mismo aspecto que un <button>) */
+a.btn {
+  text-decoration: none;
+}
+
+.quote-result h3 {
+  margin-bottom: var(--space-2);
+}
+.quote-result--available h3 {
+  color: var(--success-ink);
+}
+.quote-result--blocked h3 {
+  color: var(--danger);
+}
+.quote-result__reason {
+  color: var(--gray-700);
+}
+
+/* Desglose base / descuento / recargo / total, fácil de escanear (docs/06 §4) */
+.breakdown {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  max-width: 420px;
+}
+.breakdown dt {
+  color: var(--gray-600);
+  font-size: var(--fs-sm);
+}
+.breakdown dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-900);
+}
+.breakdown__total-label,
+.breakdown__total-value {
+  font-weight: var(--fw-semibold);
+  color: var(--gray-900);
+  border-top: 1px solid var(--gray-200);
+  padding-top: var(--space-2);
+}
+/* Los descuentos van en negativo: se distinguen también con texto, no solo color */
+.breakdown__discount {
+  color: var(--success-ink);
+}
+.quote-result__next {
+  margin-top: var(--space-4);
+  margin-bottom: 0;
+}
+
+/* ---------- Reserva por pasos (Fase 2) ---------- */
+/* Aviso en región viva (docs/05 §4): borrador retomado / cotización cargada */
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+}
+/* Advertencia de disponibilidad u otro problema del dominio */
+.alert {
+  padding: var(--space-3) var(--space-4);
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-4);
+}
+.alert p {
+  margin-bottom: var(--space-3);
+}
+/* Casillas de servicios */
+.check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+.check input {
+  width: var(--space-4);
+  height: var(--space-4);
+  accent-color: var(--accent);
+}
+/* Panel de cancelación (motivo obligatorio) */
+.cancel-panel {
+  padding: var(--space-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  margin-top: var(--space-4);
+}
+.cancel-panel h3 {
+  color: var(--danger-ink);
+}
+
+/* ---------- Administración (Fase 3) ---------- */
+.admin-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-end;
+}
+.filters .field {
+  margin-bottom: 0;
+  min-width: 220px;
+}
+.filters__actions {
+  padding-bottom: var(--space-1);
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.pagination__current {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--gray-700);
+}
+.pagination__gap {
+  width: var(--space-6);
+}
+
+/* ---------- Modal (catálogo 06 §5) ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  z-index: 50;
+}
+.modal {
+  background: #ffffff;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  width: min(520px, 100%);
+  max-height: calc(100vh - var(--space-6));
+  overflow: auto;
+  padding: var(--space-5);
+}
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.modal__title {
+  margin: 0;
+  font-size: var(--fs-lg);
+}
+.modal__close {
+  border: 1px solid var(--gray-300);
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  color: var(--gray-600);
+  line-height: 1;
+}
+.modal__close:hover {
+  background: var(--gray-100);
+  color: var(--gray-900);
+}
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop {
+    transition: none;
+  }
+}

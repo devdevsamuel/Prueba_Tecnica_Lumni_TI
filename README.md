@@ -4,8 +4,13 @@ App fullstack (TypeScript, React, Node, PostgreSQL) para cotizar y reservar sala
 coworking, con panel de administración, correos en segundo plano, asistente con IA y
 consultas SQL.
 
-> **Estado:** Fase 0 implementada (esqueleto ejecutable: workspaces, migraciones, tokens y
-> componentes base). Fases 1–8 pendientes.
+> **Estado:** **Parte 1 completa (40 %)** — Fases 0, 1, 2 y 3 implementadas. Fases 4–8 pendientes
+> (correo en segundo plano, chat con IA, consultas SQL, incidente y cierre).
+> - Fase 1: `POST /api/quotes` y `GET /api/rooms`, función pura del cotizador + tests.
+> - Fase 2: `POST/GET /api/bookings` y `confirm`/`cancel`, máquina de estados, borradores
+>   retomables y wizard de 3 pasos.
+> - Fase 3: `POST/GET /api/auth` (login scrypt + cookie HMAC firmada), `GET /api/admin/bookings`
+>   paginado con filtros, detalle, cancelación en modal y `requireRole('admin')`.
 
 ## Documentación de análisis
 

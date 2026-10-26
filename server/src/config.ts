@@ -15,6 +15,8 @@ const EnvSchema = z.object({
     .string()
     .min(32, 'SESSION_SECRET debe tener al menos 32 caracteres (generar con: openssl rand -hex 32)'),
   TZ: z.string().min(1).default('America/Bogota'),
+  // Para la cookie de sesión: `Secure` solo en producción (docs/03 §8).
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   AI_BASE_URL: z
     .url('AI_BASE_URL debe ser una URL válida')
     .default('https://opencode.ai/inference/go/openai/v1'),
@@ -33,6 +35,7 @@ export interface Config {
   readonly port: number;
   readonly sessionSecret: string;
   readonly tz: string;
+  readonly isProduction: boolean;
   readonly ai: AiConfig;
 }
 
@@ -57,6 +60,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     port: data.PORT,
     sessionSecret: data.SESSION_SECRET,
     tz: data.TZ,
+    isProduction: data.NODE_ENV === 'production',
     ai: { baseUrl: data.AI_BASE_URL, apiKey: data.AI_API_KEY, model: data.AI_MODEL },
   };
 }

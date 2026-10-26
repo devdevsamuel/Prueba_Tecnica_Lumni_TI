@@ -27,6 +27,20 @@ export interface StatusBadgeProps {
   readonly status: StatusKind;
 }
 
+/** Guard tipado: el listado admin recibe `status: string` y debe estrecharse. */
+export function isStatusKind(value: string): value is StatusKind {
+  return (
+    value === 'draft' ||
+    value === 'confirmed' ||
+    value === 'completed' ||
+    value === 'cancelled' ||
+    value === 'pending' ||
+    value === 'sending' ||
+    value === 'sent' ||
+    value === 'failed'
+  );
+}
+
 export function StatusBadge({ status }: StatusBadgeProps) {
   return <span className={`badge badge--${status}`}>{STATUS_LABELS[status]}</span>;
 }
