@@ -1,8 +1,10 @@
 # AGENTS.md — instrucciones del proyecto
 
 Reserva de salas de coworking: TypeScript estricto, React + Vite, Express, PostgreSQL.
-**Estado: Fase 0 del plan (esqueleto ejecutable).** Este archivo solo contiene reglas de trabajo;
-los requisitos, la arquitectura y los pasos ya están documentados abajo, no se repiten aquí.
+**Estado: Fase 0 implementada** (esqueleto ejecutable: workspaces, migración inicial con el
+constraint de exclusión, config con zod, layout con tokens y componentes base; fases 1–8
+pendientes). Este archivo solo contiene reglas de trabajo; los requisitos, la arquitectura y los
+pasos ya están documentados abajo, no se repiten aquí.
 
 ## De dónde sale cada requisito
 

@@ -4,7 +4,8 @@ App fullstack (TypeScript, React, Node, PostgreSQL) para cotizar y reservar sala
 coworking, con panel de administración, correos en segundo plano, asistente con IA y
 consultas SQL.
 
-> **Estado:** en construcción — Fase 0 del plan.
+> **Estado:** Fase 0 implementada (esqueleto ejecutable: workspaces, migraciones, tokens y
+> componentes base). Fases 1–8 pendientes.
 
 ## Documentación de análisis
 
@@ -20,15 +21,17 @@ Todo el análisis previo de la prueba vive en [`docs/`](docs/00-indice.md):
 | [05 — Accesibilidad](docs/05-accesibilidad.md) | Accesibilidad WCAG 2.1 AA por fase: semántica, teclado, formularios, regiones vivas, contraste y verificación |
 | [06 — UI y UX limpia](docs/06-ui-ux-limpia.md) | UI minimal neutral tipo SaaS: principios, design tokens, contrato de estados, patrones UX por flujo, catálogo de componentes y verificación |
 
-## Cómo se ejecutará (pendiente de la Fase 0)
+## Cómo se ejecuta (Fase 0)
 
 ```bash
+cp .env.example .env        # y completar SESSION_SECRET (openssl rand -hex 32)
 npm install
-npm run migrate     # aplica db/migrations/*.sql versionados
-npm run seed        # 2 usuarios (cliente/admin) + 3 salas
-npm run dev         # backend y frontend a la vez (scripts/dev.sh, sin dependencias)
+npm run migrate             # compila el server y aplica db/migrations/*.sql versionados
+npm run seed                # 2 usuarios (cliente/admin) + 3 salas
+npm run dev                 # backend y frontend a la vez (scripts/dev.sh, sin dependencias)
 ```
 
+> Contraseña de desarrollo de los usuarios sembrados: `coworking2026` (hash scrypt precalculado en `db/seed.sql`; la verificación llega en la Fase 3).
 > `npm run dev` usa un shell script propio de 5 líneas (ver `docs/02` §5). Alternativa manual:
 > dos terminales con `npm run dev -w server` y `npm run dev -w web`.
 > No usamos `concurrently` ni ningún otro empaquetador de procesos.

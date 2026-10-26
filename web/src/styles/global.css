@@ -1,0 +1,414 @@
+/* global.css — reset mínimo, layout semántico y componentes base.
+   Todo valor sale de tokens.css (docs/06 §2): sin px sueltos ni colores a ojo. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  color: var(--gray-900);
+  background: var(--gray-50);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0 0 var(--space-3);
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-semibold);
+}
+
+h1 {
+  font-size: var(--fs-2xl);
+}
+h2 {
+  font-size: var(--fs-xl);
+}
+h3 {
+  font-size: var(--fs-lg);
+}
+
+p {
+  margin: 0 0 var(--space-3);
+}
+
+a {
+  color: var(--accent);
+}
+a:hover {
+  color: var(--accent-hover);
+}
+
+/* Utilidad para texto solo para lectores de pantalla */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Skip-link (docs/05 §2): visible solo con foco */
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: -100%;
+  z-index: 10;
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent);
+  color: #ffffff;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: top var(--dur-fast) var(--ease);
+}
+.skip-link:focus {
+  top: var(--space-3);
+  color: #ffffff;
+}
+
+/* ---------- Layout ---------- */
+.app-header {
+  background: #ffffff;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.app-header__inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-brand {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--gray-900);
+  text-decoration: none;
+}
+
+.app-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.app-nav .nav-link {
+  display: inline-block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--gray-600);
+  text-decoration: none;
+  font-weight: var(--fw-medium);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.app-nav .nav-link:hover {
+  background: var(--gray-100);
+  color: var(--gray-900);
+}
+.app-nav .nav-link.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.app-main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+}
+
+.app-footer {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4);
+  color: var(--gray-500);
+  font-size: var(--fs-sm);
+}
+
+.page-intro {
+  color: var(--gray-600);
+  max-width: 60ch;
+}
+
+/* ---------- Button (docs/06 §5) ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-normal);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.btn--primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.btn--secondary {
+  background: #ffffff;
+  color: var(--gray-700);
+  border-color: var(--gray-300);
+}
+.btn--secondary:hover:not(:disabled) {
+  background: var(--gray-100);
+}
+.btn--danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-ink);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+/* Loading: mantiene el botón enfocable y anuncia con aria-busy (docs/05 §3) */
+.btn__spinner {
+  width: var(--space-3);
+  height: var(--space-3);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 700ms linear infinite;
+}
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn__spinner {
+    animation-duration: 2s;
+  }
+  .btn,
+  .skip-link,
+  .app-nav .nav-link {
+    transition: none;
+  }
+}
+
+/* ---------- Campos de formulario (Input/Select/Textarea) ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+}
+.field__label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--gray-700);
+}
+.field__control {
+  padding: var(--space-2) var(--space-3);
+  font-family: inherit;
+  font-size: var(--fs-base);
+  color: var(--gray-900);
+  background: #ffffff;
+  border: 1px solid var(--gray-300);
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.field__control::placeholder {
+  color: var(--gray-400);
+}
+.field__control:hover {
+  border-color: var(--gray-400);
+}
+/* El error nunca es solo color: va acompañado de mensaje (docs/05 §5) */
+.field__control[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.field__error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
+/* ---------- Card ---------- */
+.card {
+  background: #ffffff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+}
+.card__title {
+  margin-bottom: var(--space-4);
+}
+
+/* ---------- Table ---------- */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.table caption {
+  text-align: left;
+  padding-bottom: var(--space-3);
+  color: var(--gray-600);
+  font-size: var(--fs-sm);
+}
+.table th {
+  text-align: left;
+  font-weight: var(--fw-semibold);
+  color: var(--gray-600);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--gray-200);
+}
+.table td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--gray-700);
+}
+.table tbody tr:hover {
+  background: var(--gray-100);
+}
+
+/* ---------- StatusBadge: siempre con texto, nunca solo color ---------- */
+.badge {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+.badge--draft,
+.badge--pending {
+  background: var(--gray-100);
+  color: var(--gray-700);
+}
+.badge--confirmed,
+.badge--sent {
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+.badge--completed {
+  background: var(--info-soft);
+  color: var(--info-ink);
+}
+.badge--sending {
+  background: var(--warning-soft);
+  color: var(--warning-ink);
+}
+.badge--cancelled {
+  background: var(--gray-200);
+  color: var(--gray-600);
+}
+.badge--failed {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+/* ---------- Stepper (docs/06 §5): <ol>, activo con aria-current="step" ---------- */
+.stepper {
+  list-style: none;
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.stepper__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  color: var(--gray-500);
+}
+.stepper__item--completed {
+  color: var(--success-ink);
+}
+.stepper__item--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+.stepper__number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: 50%;
+  background: var(--gray-100);
+  color: var(--gray-600);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+.stepper__item--completed .stepper__number {
+  background: var(--success-soft);
+  color: var(--success-ink);
+}
+.stepper__item--active .stepper__number {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+/* ---------- Estados: Empty / Loading / Error (docs/06 §3) ---------- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--gray-600);
+}
+.state__title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  color: var(--gray-900);
+}
+.state__description {
+  margin: 0;
+  max-width: 48ch;
+}
+.state--error .state__title {
+  color: var(--danger);
+}
+.state__spinner {
+  width: var(--space-5);
+  height: var(--space-5);
+  border: 3px solid var(--gray-200);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: btn-spin 700ms linear infinite;
+}
+
+/* ---------- Utilidades de retícula (docs/06 §1) ---------- */
+.stack > * + * {
+  margin-top: var(--space-4);
+}
+.stack-lg > * + * {
+  margin-top: var(--space-5);
+}

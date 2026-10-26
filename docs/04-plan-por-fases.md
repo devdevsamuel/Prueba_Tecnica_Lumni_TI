@@ -44,21 +44,21 @@ analítica; Parte 3 = 10 % con trabajo de escritura sobre un esquema ya conocido
 
 **Objetivo:** esqueleto ejecutable, no funcionalidad.
 - [x] `git init` + `.gitignore` + primer commit (hecho: `6713f99`).
-- [ ] npm workspaces (`server/`, `web/`), `tsconfig` estricto (`strict: true`, `noUncheckedIndexedAccess`).
-- [ ] `db/migrate.ts` runner propio (lee `.sql` numerados, tabla `schema_migrations`).
-- [ ] Migración `0001_init.sql`: `users`, `rooms`, `bookings`, `booking_lines` + `btree_gist` y el
+- [x] npm workspaces (`server/`, `web/`), `tsconfig` estricto (`strict: true`, `noUncheckedIndexedAccess`).
+- [x] `db/migrate.ts` runner propio (lee `.sql` numerados, tabla `schema_migrations`).
+- [x] Migración `0001_init.sql`: `users`, `rooms`, `bookings`, `booking_lines` + `btree_gist` y el
       constraint de exclusión **`EXCLUDE … WHERE (status = 'confirmed')`** (literal del PDF,
       `03` §1; se crea ya, evita una migración dolorosa después).
-- [ ] `seed.sql`: 2 usuarios (cliente/admin) + 3 salas con tarifas del enunciado.
-- [ ] `config.ts` con validación de env vía zod; `.env.example` (con `AI_BASE_URL/AI_API_KEY/AI_MODEL`).
-- [ ] **Composición raíz `app.ts`** con inyección manual de dependencias (SOLID-D desde el inicio).
-- [ ] Layout del front: router con 4 rutas, header, `tokens.css` **completo** (paleta, espaciado,
+- [x] `seed.sql`: 2 usuarios (cliente/admin) + 3 salas con tarifas del enunciado.
+- [x] `config.ts` con validación de env vía zod; `.env.example` (con `AI_BASE_URL/AI_API_KEY/AI_MODEL`).
+- [x] **Composición raíz `app.ts`** con inyección manual de dependencias (SOLID-D desde el inicio).
+- [x] Layout del front: router con 4 rutas, header, `tokens.css` **completo** (paleta, espaciado,
       tipografía, radios, sombras — `06` §2), componentes base **con sus estados**
       (Button, Input, Card, Table, StatusBadge, Stepper) y `EmptyState`/`LoadingState`/`ErrorState`
       (`06` §5) → **esqueleto de UI y contrato de estados desde el día 1**.
-- [ ] **Accesibilidad base (`05` §1–2):** `<html lang="es">`, layout semántico (`main`/`nav`),
+- [x] **Accesibilidad base (`05` §1–2):** `<html lang="es">`, layout semántico (`main`/`nav`),
       estilos `:focus-visible` en `tokens.css` (nunca `outline: none` sin sustituto).
-- [ ] `AGENTS.md` (instrucciones del proyecto) y esqueleto de `README.md`.
+- [x] `AGENTS.md` (instrucciones del proyecto) y esqueleto de `README.md`.
 
 **Criterio de "hecho":** `npm run typecheck` verde, `npm run dev` levanta front+back, `npm run migrate` corre de cero.
 

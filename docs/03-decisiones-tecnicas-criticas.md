@@ -18,9 +18,12 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;   -- viene con PostgreSQL, sin depend
 ALTER TABLE bookings ADD CONSTRAINT no_room_overlap
   EXCLUDE USING btree (
     room_id  WITH =,
-    tsrange(starts_at, ends_at) WITH &&
+    tstzrange(starts_at, ends_at) WITH &&
   ) WHERE (status = 'confirmed');
 ```
+
+> `tstzrange`, no `tsrange`: las columnas son `timestamptz`. `tsrange` espera `timestamp` sin
+> zona, no resuelve la función y PostgreSQL aborta la migración completa (`42883`).
 
 - La **segunda transacción** choca con el constraint → error `23P01` → la API responde **409** con
   el motivo y el **siguiente horario disponible** (ya calculado por el cotizador).

@@ -1,0 +1,83 @@
+/**
+ * Design tokens (docs/06 §2). Única fuente de color, espacio y tipografía.
+ * Contrastes verificados al definirlos (docs/06 §2, docs/05 §5):
+ * todos los pares de texto cumplen WCAG AA ≥ 4,5:1.
+ */
+:root {
+  /* Neutros */
+  --gray-50: #f8fafc;
+  --gray-100: #f1f5f9;
+  --gray-200: #e2e8f0;
+  --gray-300: #cbd5e1;
+  --gray-400: #94a3b8;
+  --gray-500: #64748b; /* 4,76:1 sobre blanco */
+  --gray-600: #475569; /* 7,58:1 sobre blanco */
+  --gray-700: #334155;
+  --gray-800: #1e293b;
+  --gray-900: #0f172a; /* 17,85:1 sobre blanco */
+
+  /* Accent (uno solo, docs/06 §1) */
+  --accent: #2563eb; /* 5,17:1 sobre blanco; texto blanco sobre él: 5,17:1 */
+  --accent-hover: #1d4ed8; /* 6,70:1 con texto blanco */
+  --accent-soft: #eff6ff;
+
+  /* Semánticos (+ soft de fondo, + ink para texto sobre soft: AA) */
+  --success: #16a34a;
+  --success-soft: #dcfce7;
+  --success-ink: #166534; /* 6,49:1 sobre success-soft */
+  --warning: #d97706;
+  --warning-soft: #fef3c7;
+  --warning-ink: #92400e; /* 6,37:1 sobre warning-soft */
+  --danger: #dc2626;
+  --danger-soft: #fee2e2;
+  --danger-ink: #991b1b; /* 6,80:1 sobre danger-soft; danger sobre blanco: 4,83:1 */
+  --info: #0284c7;
+  --info-soft: #e0f2fe;
+  --info-ink: #075985; /* 6,59:1 sobre info-soft */
+
+  /* Espaciado (solo esta escala, docs/06 §2) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Tipografía */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --fs-xs: 0.75rem; /* 12px */
+  --fs-sm: 0.875rem; /* 14px */
+  --fs-base: 1rem; /* 16px: cuerpo */
+  --fs-lg: 1.125rem; /* 18px */
+  --fs-xl: 1.25rem; /* 20px */
+  --fs-2xl: 1.5rem; /* 24px */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.25;
+  --lh-normal: 1.5;
+
+  /* Radios: uno por componente */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  /* Sombras: una tenue para elevación */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+
+  /* Movimiento: solo transiciones de estado */
+  --dur-fast: 150ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Breakpoints (referencia, mobile-first; los media queries no admiten vars)
+     --bp-sm: 640px · --bp-md: 768px · --bp-lg: 1024px */
+}
+
+/* Foco visible SIEMPRE definido sobre tokens (docs/05 §2):
+   nunca `outline: none` sin sustituto. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
