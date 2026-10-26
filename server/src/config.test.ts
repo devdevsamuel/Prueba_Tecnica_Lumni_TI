@@ -5,6 +5,7 @@ import { ConfigError, loadConfig } from './config.js';
 const validEnv: NodeJS.ProcessEnv = {
   DATABASE_URL: 'postgresql://localhost:5432/coworking',
   SESSION_SECRET: 'a'.repeat(64),
+  AI_API_KEY: 'oc_sk_prueba',
 };
 
 test('loadConfig aplica los defaults del enunciado', () => {
@@ -13,7 +14,7 @@ test('loadConfig aplica los defaults del enunciado', () => {
   assert.equal(config.tz, 'America/Bogota');
   assert.equal(config.ai.baseUrl, 'https://opencode.ai/inference/go/openai/v1');
   assert.equal(config.ai.model, 'glm-5.3-flash');
-  assert.equal(config.ai.apiKey, undefined);
+  assert.equal(config.ai.apiKey, 'oc_sk_prueba');
 });
 
 test('loadConfig lee las variables presentes', () => {
@@ -40,5 +41,13 @@ test('loadConfig rechaza PORT no numérico', () => {
   assert.throws(
     () => loadConfig({ ...validEnv, PORT: 'ochenta' }),
     (error: unknown) => error instanceof ConfigError && /PORT/.test(error.message),
+  );
+});
+
+test('loadConfig exige AI_API_KEY desde la Fase 5', () => {
+  const { AI_API_KEY: _omit, ...withoutKey } = validEnv;
+  assert.throws(
+    () => loadConfig(withoutKey),
+    (error: unknown) => error instanceof ConfigError && /AI_API_KEY/.test(error.message),
   );
 });

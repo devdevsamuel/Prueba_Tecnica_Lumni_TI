@@ -6,17 +6,23 @@ import { adminRouter } from './modules/admin/routes.js';
 import { attachSession, requireRole } from './modules/auth/middleware.js';
 import { authRouter } from './modules/auth/routes.js';
 import { bookingsRouter } from './modules/bookings/routes.js';
+import { OpenCodeAiClient, type AiClient } from './modules/chat/aiClient.js';
+import { chatRouter } from './modules/chat/routes.js';
 import { quotesRouter } from './modules/quotes/routes.js';
 
 /**
  * Composición raíz (docs/03 §7-D): único lugar que cablea dependencias
  * concretas. Todo módulo recibe lo que necesita por parámetro → testeable
  * sin BD ni red, y el ensamblaje es explícito (sin framework de DI).
+ *
+ * `ai` es opcional: los tests inyectan un doble del modelo; en producción usa
+ * `OpenCodeAiClient` con la configuración de `.env`.
  */
 export interface AppDeps {
   readonly config: Config;
   readonly pool: Pool;
   readonly clock: Clock;
+  readonly ai?: AiClient;
 }
 
 export function createApp(deps: AppDeps): express.Express {
@@ -36,6 +42,17 @@ export function createApp(deps: AppDeps): express.Express {
     authRouter({
       pool: deps.pool,
       secret: deps.config.sessionSecret,
+      isProduction: deps.config.isProduction,
+    }),
+  );
+
+  // Chat con IA (Fase 5).
+  app.use(
+    '/api/chat',
+    chatRouter({
+      pool: deps.pool,
+      clock: deps.clock,
+      ai: deps.ai ?? new OpenCodeAiClient(deps.config.ai),
       isProduction: deps.config.isProduction,
     }),
   );

@@ -10,6 +10,7 @@ import {
 } from '../../core/time.js';
 import { findNextSlot, quote, type BusyInterval, type QuoteResult, type Slot } from '../quotes/quote.js';
 import { getRoom, quoteReasonMessage, type Room } from '../quotes/service.js';
+import { enqueueConfirmation } from '../email/service.js';
 import {
   buildLines,
   codeFromConcept,
@@ -490,6 +491,22 @@ async function confirmTransition(deps: BookingDeps, id: number): Promise<boolean
     } catch (error) {
       if (isExclusionViolation(error)) throw new OverlapError(null);
       throw error;
+    }
+
+    // Outbox transaccional (docs/03 §2-3): el correo se encola en la MISMA
+    // transición. Si algo falla aquí no se confirma nada, y tampoco queda correo
+    // — nunca puede existir una confirmación sin su correo ni al revés.
+    if ((updated.rowCount ?? 0) === 1) {
+      await enqueueConfirmation(client, {
+        bookingId: row.id,
+        customerName: row.customer_name,
+        roomName: row.room_name ?? 'Sala',
+        date: bogotaDateStr(row.starts_at),
+        startTime: formatMinutes(bogotaMinutes(row.starts_at)),
+        endTime: formatMinutes(bogotaMinutes(row.ends_at)),
+        total: Number(row.total),
+        nextAttemptAt: deps.clock.now(),
+      });
     }
 
     await client.query('COMMIT');

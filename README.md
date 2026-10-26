@@ -4,13 +4,22 @@ App fullstack (TypeScript, React, Node, PostgreSQL) para cotizar y reservar sala
 coworking, con panel de administración, correos en segundo plano, asistente con IA y
 consultas SQL.
 
-> **Estado:** **Parte 1 completa (40 %)** — Fases 0, 1, 2 y 3 implementadas. Fases 4–8 pendientes
-> (correo en segundo plano, chat con IA, consultas SQL, incidente y cierre).
+> **Estado:** **~90 % de la prueba** — Fases 0–3 (**Parte 1, 40 %**), **7** (`INCIDENTE.md`,
+> 15 %), **6** (`consultas.sql`, 10 %), **4** (correo en segundo plano) y **5** (chat con IA)
+> implementadas. Pendiente: **Fase 8** (README completo, pulido y sustentación).
+>
 > - Fase 1: `POST /api/quotes` y `GET /api/rooms`, función pura del cotizador + tests.
 > - Fase 2: `POST/GET /api/bookings` y `confirm`/`cancel`, máquina de estados, borradores
 >   retomables y wizard de 3 pasos.
 > - Fase 3: `POST/GET /api/auth` (login scrypt + cookie HMAC firmada), `GET /api/admin/bookings`
 >   paginado con filtros, detalle, cancelación en modal y `requireRole('admin')`.
+> - Fase 4: outbox transaccional (`email_outbox`), worker con `SKIP LOCKED` + backoff y bandeja
+>   de correos en el admin.
+> - Fase 5: `POST/GET /api/chat` con OpenCode Go (`x-opencode-session`), salida validada con
+>   zod (enum `ask`/`quote`/`suggest`/`create_draft`), fechas relativas resueltas en código,
+>   precios reales del cotizador y borrador retomable por el wizard (la confirmación es un
+>   botón fuera del chat).
+> - Fases 6 y 7: `consultas.sql` (Parte 3) e `INCIDENTE.md` (Parte 4).
 
 ## Documentación de análisis
 
@@ -29,12 +38,15 @@ Todo el análisis previo de la prueba vive en [`docs/`](docs/00-indice.md):
 ## Cómo se ejecuta (Fase 0)
 
 ```bash
-cp .env.example .env        # y completar SESSION_SECRET (openssl rand -hex 32)
+cp .env.example .env        # y completar SESSION_SECRET (openssl rand -hex 32) y AI_API_KEY
 npm install
 npm run migrate             # compila el server y aplica db/migrations/*.sql versionados
 npm run seed                # 2 usuarios (cliente/admin) + 3 salas
 npm run dev                 # backend y frontend a la vez (scripts/dev.sh, sin dependencias)
 ```
+
+> `AI_API_KEY` es **obligatoria desde la Fase 5**: sin ella el servidor no arranca (el chat la
+> usa). La clave de IA vive solo en `.env`, nunca en el repo.
 
 > Contraseña de desarrollo de los usuarios sembrados: `coworking2026` (hash scrypt precalculado en `db/seed.sql`; la verificación llega en la Fase 3).
 > `npm run dev` usa un shell script propio de 5 líneas (ver `docs/02` §5). Alternativa manual:

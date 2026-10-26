@@ -112,6 +112,16 @@ export function weekdayOf(value: string): number | null {
   return new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day)).getUTCDay();
 }
 
+/** Fecha 'YYYY-MM-DD' desplazada N días (calendario puro, sin husos). */
+export function addDays(date: string, days: number): string {
+  const ymd = parseYmd(date);
+  if (!ymd) throw new Error(`Fecha inválida: ${date}`);
+  const shifted = new Date(Date.UTC(ymd.year, ymd.month - 1, ymd.day + days));
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${String(shifted.getUTCFullYear()).padStart(4, '0')}-${month}-${day}`;
+}
+
 /** 'HH:MM' → minutos desde medianoche; null si no es hora válida. */
 export function minutesOf(value: string): number | null {
   const hm = parseHm(value);

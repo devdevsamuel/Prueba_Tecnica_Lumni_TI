@@ -52,15 +52,57 @@ export function adminCancelBooking(id: number, reason: string): Promise<Booking>
   return apiPost<Booking>(`/api/admin/bookings/${id}/cancel`, { reason });
 }
 
-/** Hora de Colombia para mostrar en la tabla y el detalle (docs/05 §6). */
-const BOGOTA_FORMAT = new Intl.DateTimeFormat('es-CO', {
-  timeZone: 'America/Bogota',
-  dateStyle: 'medium',
-  timeStyle: 'short',
-});
+// ── Bandeja de correos (Parte 2.1) ──────────────────────────────────────────
 
-/** ISO → "3 nov 2026, 9:00" (hora de Bogotá). `null` para borradores sin horario. */
-export function formatBogota(iso: string | null): string {
-  if (!iso) return 'Sin horario';
-  return BOGOTA_FORMAT.format(new Date(iso));
+export const EMAIL_STATUSES = ['pending', 'sending', 'sent', 'failed'] as const;
+
+export type EmailStatus = (typeof EMAIL_STATUSES)[number];
+
+/** El estado llega de la URL: si no es válido se ignora en vez de pegarle al API. */
+export function isEmailStatus(value: string): value is EmailStatus {
+  return (EMAIL_STATUSES as readonly string[]).includes(value);
+}
+
+export interface EmailItem {
+  readonly id: number;
+  readonly bookingId: number;
+  readonly kind: string;
+  readonly status: EmailStatus;
+  readonly attempts: number;
+  readonly nextAttemptAt: string;
+  readonly lastError: string | null;
+  readonly subject: string;
+  readonly sentAt: string | null;
+  readonly createdAt: string;
+  readonly recipient: string;
+  readonly customerName: string;
+  readonly roomName: string | null;
+}
+
+export interface EmailDetail extends EmailItem {
+  readonly body: string;
+}
+
+export interface EmailListResponse {
+  readonly items: readonly EmailItem[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+  readonly totalPages: number;
+}
+
+export function fetchEmails(
+  filters: { status?: EmailStatus; page?: number; pageSize?: number },
+  signal?: AbortSignal,
+): Promise<EmailListResponse> {
+  const params = new URLSearchParams();
+  if (filters.status) params.set('status', filters.status);
+  if (filters.page) params.set('page', String(filters.page));
+  if (filters.pageSize) params.set('pageSize', String(filters.pageSize));
+  const query = params.toString();
+  return apiGet<EmailListResponse>(`/api/admin/emails${query ? `?${query}` : ''}`, signal);
+}
+
+export function fetchEmail(id: number, signal?: AbortSignal): Promise<EmailDetail> {
+  return apiGet<EmailDetail>(`/api/admin/emails/${id}`, signal);
 }

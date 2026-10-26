@@ -31,6 +31,14 @@ const CancelBodySchema = z.object({
   reason: z.string({ error: 'El motivo es obligatorio.' }).trim().min(1, 'El motivo es obligatorio.').max(500),
 });
 
+const EMAIL_STATUSES = ['pending', 'sending', 'sent', 'failed'] as const;
+
+const EmailListQuerySchema = z.object({
+  status: z.enum(EMAIL_STATUSES).optional(),
+  page: z.coerce.number().int('page debe ser un entero').min(1).default(1),
+  pageSize: z.coerce.number().int('pageSize debe ser un entero').min(1).max(100).default(10),
+});
+
 const IdParamSchema = z.object({
   id: z.string().regex(/^\d+$/, 'El identificador debe ser numérico').transform(Number),
 });
@@ -151,6 +159,116 @@ export function adminRouter(deps: AdminDeps): Router {
     cancel(bookingDeps, id.data.id, body.data.reason)
       .then((view) => res.json(view))
       .catch((error: unknown) => (mapBookingError(res, error) ? undefined : next(error)));
+  });
+
+  // ── Bandeja de correos (Parte 2.1) ────────────────────────────────────────
+  // Modelo de lectura del panel: cruza outbox + reserva + sala (igual que el
+  // listado de reservas, la SQL de lectura vive en el módulo de admin).
+  const EMAIL_COLUMNS = `
+    o.id, o.booking_id, o.kind, o.status, o.attempts, o.next_attempt_at, o.last_error,
+    o.rendered_subject, o.sent_at, o.created_at,
+    b.customer_email AS recipient, b.customer_name, r.name AS room_name`;
+  const EMAIL_FROM = `
+    FROM email_outbox o
+    JOIN bookings b ON b.id = o.booking_id
+    LEFT JOIN rooms r ON r.id = b.room_id`;
+
+  interface EmailRow {
+    readonly id: number;
+    readonly booking_id: number;
+    readonly kind: string;
+    readonly status: 'pending' | 'sending' | 'sent' | 'failed';
+    readonly attempts: number;
+    readonly next_attempt_at: Date;
+    readonly last_error: string | null;
+    readonly rendered_subject: string;
+    readonly sent_at: Date | null;
+    readonly created_at: Date;
+    readonly recipient: string;
+    readonly customer_name: string;
+    readonly room_name: string | null;
+    readonly total_rows?: number;
+    readonly body?: string;
+  }
+
+  /** El SQL usa snake_case (columnas reales); la API responde camelCase como
+   *  el resto de endpoints, para que el contrato sea coherente. */
+  function toEmailView(row: EmailRow) {
+    return {
+      id: row.id,
+      bookingId: row.booking_id,
+      kind: row.kind,
+      status: row.status,
+      attempts: row.attempts,
+      nextAttemptAt: row.next_attempt_at,
+      lastError: row.last_error,
+      subject: row.rendered_subject,
+      sentAt: row.sent_at,
+      createdAt: row.created_at,
+      recipient: row.recipient,
+      customerName: row.customer_name,
+      roomName: row.room_name,
+    };
+  }
+
+  router.get('/emails', (req: Request, res: Response, next: NextFunction) => {
+    const parsed = EmailListQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      sendError(
+        res,
+        400,
+        'validation_error',
+        'Filtros o paginación inválidos.',
+        validationDetails(parsed.error.issues),
+      );
+      return;
+    }
+    const { status, page, pageSize } = parsed.data;
+    deps.pool
+      .query<EmailRow>(
+        `SELECT count(*) OVER()::int AS total_rows, ${EMAIL_COLUMNS}
+         ${EMAIL_FROM}
+          WHERE ($1::text IS NULL OR o.status = $1)
+          ORDER BY o.created_at DESC, o.id DESC
+          LIMIT $2 OFFSET $3`,
+        [status ?? null, pageSize, (page - 1) * pageSize],
+      )
+      .then(({ rows }) => {
+        const total = rows[0]?.total_rows ?? 0;
+        res.json({
+          items: rows.map((row) => toEmailView(row)),
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+          filters: { status: status ?? null },
+        });
+      })
+      .catch(next);
+  });
+
+  router.get('/emails/:id', (req: Request, res: Response, next: NextFunction) => {
+    const parsed = IdParamSchema.safeParse(req.params);
+    if (!parsed.success) {
+      sendError(res, 400, 'validation_error', 'Identificador de correo inválido.');
+      return;
+    }
+    deps.pool
+      .query<EmailRow>(
+        `SELECT ${EMAIL_COLUMNS}, o.rendered_body AS body
+         ${EMAIL_FROM}
+          WHERE o.id = $1`,
+        [parsed.data.id],
+      )
+      .then(({ rows }) => {
+        const row = rows[0];
+        if (!row) {
+          sendError(res, 404, 'not_found', `No existe el correo ${parsed.data.id}.`);
+          return;
+        }
+        res.json({ ...toEmailView(row), body: row.body ?? '' });
+      })
+      .catch(next);
   });
 
   return router;

@@ -521,8 +521,7 @@ a.btn {
   height: var(--space-4);
   accent-color: var(--accent);
 }
-/* Panel de cancelación (motivo obligatorio) */
-.cancel-panel {
+/* Panel de cancelación (motivo obligatorio) */.cancel-panel {
   padding: var(--space-4);
   border: 1px solid var(--danger);
   border-radius: var(--radius-md);
@@ -624,4 +623,142 @@ a.btn {
   .modal-backdrop {
     transition: none;
   }
+}
+
+/* ---------- Pestañas del panel (componente AdminGate) ---------- */
+.admin-head__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+.admin-tabs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--space-1);
+}
+.admin-tab {
+  display: inline-block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--gray-600);
+  text-decoration: none;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.admin-tab:hover {
+  background: var(--gray-100);
+  color: var(--gray-900);
+}
+.admin-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------- Cuerpo del correo (Parte 2.1) ---------- */
+.email-body {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--gray-800);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Los desgloses con fila envolvente (detalle admin, tarjetas del chat) deben
+   repartirse en la MISMA rejilla 2 columnas que el desglose sin envolvente. */
+.breakdown__row {
+  display: contents;
+}
+
+/* ---------- Chat con IA (Parte 2.2) ---------- */
+.chat-empty {
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  color: var(--gray-600);
+}
+.chat-empty p {
+  max-width: 52ch;
+  margin: 0 auto var(--space-3);
+}
+.chat-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.bubble {
+  max-width: min(64ch, 92%);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+}
+.bubble--user {
+  align-self: flex-end;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.bubble--assistant {
+  align-self: flex-start;
+}
+.bubble--failed {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.bubble__meta {
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-xs);
+  color: var(--gray-500);
+}
+.bubble--user .bubble__meta {
+  color: var(--accent-hover);
+}
+.bubble__text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.bubble__text--typing {
+  color: var(--gray-500);
+}
+.chat-card {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  background: var(--gray-50);
+}
+.chat-card--blocked {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+.chat-card__title {
+  margin: 0 0 var(--space-2);
+  font-weight: var(--fw-semibold);
+}
+.chat-card__reason {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-sm);
+  color: var(--warning-ink);
+}
+.chat-card__action {
+  margin: var(--space-3) 0 0;
+}
+.chat-input {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
 }

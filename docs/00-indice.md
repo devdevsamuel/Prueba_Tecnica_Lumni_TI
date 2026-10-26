@@ -2,8 +2,9 @@
 
 > Documento de trabajo para preparar la implementación. Origen: PDF
 > `Prueba_tecnica_Lumni_TI_F.pdf` (4 páginas, leído completo y contrastado).
-> Estado: **análisis + auditoría cerrados → Fases 0–3 implementadas (Parte 1, 40 %, cerrada)**;
-> fases 4–8 pendientes. El detalle de cada fase vive en [`04-plan-por-fases.md`](04-plan-por-fases.md).
+> Estado: **análisis + auditoría cerrados → fases 0, 1, 2, 3, 7, 6, 4 y 5 implementadas (~90 %)**;
+> pendiente 8 (cierre: README completo, pulido y sustentación). El detalle de cada fase vive en
+> [`04-plan-por-fases.md`](04-plan-por-fases.md).
 
 | Archivo | Contenido |
 |---|---|

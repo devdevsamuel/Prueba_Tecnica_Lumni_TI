@@ -5,8 +5,10 @@ import { z } from 'zod';
  *
  * `loadConfig` recibe el env por parámetro (puro, testeable sin procesos ni
  * archivos): `index.ts` le pasa `process.env` y los tests un objeto falso.
- * Decisión: `AI_API_KEY` es OPCIONAL en la Fase 0; pasa a requerirse en la
- * Fase 5, cuando el chat la usa. Así el esqueleto arranca sin clave de IA.
+ *
+ * `AI_API_KEY` **es obligatoria desde la Fase 5**: el chat necesita el modelo y
+ * el enunciado exige que la clave viva en `.env`, nunca en el repo. Si falta, el
+ * error de arranque lo dice con claridad (y `.env.example` indica cómo obtenerla).
  */
 const EnvSchema = z.object({
   DATABASE_URL: z.url('DATABASE_URL debe ser una URL de PostgreSQL válida'),
@@ -20,7 +22,9 @@ const EnvSchema = z.object({
   AI_BASE_URL: z
     .url('AI_BASE_URL debe ser una URL válida')
     .default('https://opencode.ai/inference/go/openai/v1'),
-  AI_API_KEY: z.string().min(1).optional(),
+  AI_API_KEY: z
+    .string({ error: 'AI_API_KEY es obligatoria desde la Fase 5 (el chat la necesita).' })
+    .min(1, 'AI_API_KEY no puede estar vacía: usa el valor oc_sk_… y guárdalo en .env'),
   AI_MODEL: z.string().min(1).default('glm-5.3-flash'),
 });
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { AdminGate } from '../components/AdminGate';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
 import { Select } from '../components/Input';
@@ -7,15 +8,16 @@ import { isStatusKind, StatusBadge } from '../components/StatusBadge';
 import { Table, type Column } from '../components/Table';
 import { EmptyState, ErrorState, LoadingState } from '../components/states';
 import { ApiError } from '../lib/api';
-import { fetchBookings, formatBogota, type AdminListItem, type AdminListResponse } from '../lib/admin';
-import { logoutRequest, useSession } from '../lib/auth';
+import { fetchBookings, type AdminListItem, type AdminListResponse } from '../lib/admin';
+import { formatBogota } from '../lib/datetime';
+import { useSession } from '../lib/auth';
 import { fetchRooms, formatCop, type Room } from '../lib/quotes';
-import { LoginPage } from './LoginPage';
 
 /**
- * Pantalla 3 — Administración (docs/01 §2.3, docs/06 §4):
- * filtros y página viven en la URL (refrescables y compartibles), y los estados
- * vacíos se distinguen entre "sin reservas" y "sin resultados del filtro".
+ * Pantalla 3 — Listado del admin (docs/01 §2.3, docs/06 §4): filtros y página
+ * viven en la URL (refrescables y compartibles) y los estados vacíos se
+ * distinguen entre "sin reservas" y "sin resultados del filtro".
+ * La puerta de sesión y las pestañas las aporta `AdminGate`.
  */
 
 const PAGE_SIZE = 10;
@@ -93,66 +95,6 @@ export function AdminPage() {
     setSearchParams(next);
   }
 
-  async function handleLogout(): Promise<void> {
-    await logoutRequest();
-    session.reload();
-  }
-
-  // ── Puerta de sesión ──────────────────────────────────────────────────────
-  if (session.loading) {
-    return (
-      <div className="stack-lg">
-        <h1>Administración</h1>
-        <Card>
-          <LoadingState label="Comprobando la sesión…" />
-        </Card>
-      </div>
-    );
-  }
-
-  if (session.error) {
-    return (
-      <div className="stack-lg">
-        <h1>Administración</h1>
-        <Card>
-          <ErrorState message={session.error} onRetry={session.reload} />
-        </Card>
-      </div>
-    );
-  }
-
-  if (!session.user) {
-    return (
-      <div className="stack-lg">
-        <div>
-          <h1>Administración</h1>
-          <p className="page-intro">Área reservada al equipo del coworking.</p>
-        </div>
-        <LoginPage onLoggedIn={() => session.reload()} />
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="stack-lg">
-        <h1>Administración</h1>
-        <Card>
-          <EmptyState
-            title="Tu cuenta no tiene acceso"
-            description={`La sesión de ${session.user.email} es de cliente. El panel es solo para administradores.`}
-            action={
-              <Button variant="secondary" onClick={() => void handleLogout()}>
-                Cerrar sesión
-              </Button>
-            }
-          />
-        </Card>
-      </div>
-    );
-  }
-
-  // ── Panel ─────────────────────────────────────────────────────────────────
   const hasFilters = Boolean(status || room);
   const columns: Column<AdminListItem>[] = [
     { key: 'id', header: 'ID', render: (item) => item.id },
@@ -193,17 +135,7 @@ export function AdminPage() {
   ];
 
   return (
-    <div className="stack-lg">
-      <div className="admin-head">
-        <div>
-          <h1>Administración</h1>
-          <p className="page-intro">Sesión de {session.user.fullName} · {session.user.email}</p>
-        </div>
-        <Button variant="secondary" onClick={() => void handleLogout()}>
-          Cerrar sesión
-        </Button>
-      </div>
-
+    <AdminGate session={session} title="Administración">
       <Card title="Filtros">
         <div className="filters">
           <Select
@@ -298,6 +230,6 @@ export function AdminPage() {
           </>
         )}
       </Card>
-    </div>
+    </AdminGate>
   );
 }

@@ -1,6 +1,8 @@
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { AdminPage } from './pages/AdminPage';
 import { AdminBookingPage } from './pages/AdminBookingPage';
+import { AdminEmailsPage } from './pages/AdminEmailsPage';
+import { AdminEmailDetailPage } from './pages/AdminEmailDetailPage';
 import { BookingWizardPage } from './pages/BookingWizardPage';
 import { ChatPage } from './pages/ChatPage';
 import { QuotePage } from './pages/QuotePage';
@@ -47,6 +49,8 @@ export function App() {
           <Route path="/reserva" element={<BookingWizardPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/admin/reserva/:id" element={<AdminBookingPage />} />
+          <Route path="/admin/correos" element={<AdminEmailsPage />} />
+          <Route path="/admin/correos/:id" element={<AdminEmailDetailPage />} />
           <Route path="/chat" element={<ChatPage />} />
         </Routes>
       </main>

@@ -74,6 +74,7 @@ pantalla** (no en la Fase 8):
 | `StatusBadge` | confirmed / draft / completed / cancelled / pending / failed — **siempre con texto**, nunca solo color |
 | `Stepper` | completado / activo / pendiente (`aria-current="step"`) |
 | `Modal` | trampa de foco, cierre con Esc y devolución del foco (`05` §2) |
+| `AdminGate` | sesión **cargando** / **error** (con reintento) / **sin sesión** (muestra el login) / **sin rol** (403) / **autorizado** — y las pestañas del panel con el apartado activo |
 | `EmptyState`, `LoadingState`, `ErrorState` | patrones únicos reutilizados por las 5 pantallas |
 
 **Regla:** si un componente nuevo no entra en este catálogo, se añade primero aquí y después al
