@@ -250,6 +250,11 @@ const worker = createWorker({ outbox: fakeOutbox, sender: failingSender, clock: 
 
 ## 9. Análisis del incidente (base para `INCIDENTE.md`)
 
+> **Alcance:** este escenario pertenece **solo al análisis de la Parte 4** — el enunciado dice
+> textual *"No hay que programar"*. Nuestra app **no** implementa recordatorios ni la tabla
+> `reminders`; las referencias de §9.4 describen la remediación del sistema afectado, no el
+> esquema de nuestra base de datos.
+
 **Hechos:** job cada 30 min; solo puede enviarse 8:00–18:00; TTL de 2 h en `pending` → `expired`;
 92 % de `expired` creados **después de las 17:00**; "casi la mitad" nunca recibe el recordatorio.
 
@@ -259,6 +264,11 @@ creado a las 17:05 cumple 2 h a las 19:05 → dentro de la ventana cerrada (18:0
 nunca se intenta enviar y el job lo marca `expired` sin haberlo intentado. Casi todo lo creado
 desde ~16:00 está condenado. El job además puede estar marcando `expired` **antes** de intentar
 el envío en el mismo ciclo (orden de operaciones).
+
+**Coherencia con el dato del PDF:** el umbral del mecanismo es el **16:00** (2 h de TTL antes del
+cierre de las 18:00) y el dato observado — **92 % de `expired` creados después de las 17:00** —
+cae dentro de ese tramo y lo confirma; no es una inferencia alternativa, es la predicción del
+modelo comparada con la evidencia.
 
 ### 9.2 Hipótesis alternativa (a descartar con datos)
 **Desfase de zona horaria:** si `created_at` se guarda en UTC y el "17:00" del dato se lee en

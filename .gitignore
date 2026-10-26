@@ -21,6 +21,12 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Artefactos temporales de extracción/análisis
+pdf_extracted.txt
+
+# Enunciado de la prueba (no se versiona)
+Prueba_tecnica_Lumni_TI_F.pdf
+
 # Cobertura / test
 coverage/
 

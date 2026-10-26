@@ -11,7 +11,7 @@
 
 | Necesidad | Decisión | Dependencias | Justificación / alternativa descartada |
 |---|---|---|---|
-| HTTP y rutas | **Express** | `express` | Único framework. `node:http` puro obligaría a reimplementar body parsing, cookies y manejo de errores (más riesgo en 48 h); Fastify no aporta lo suficiente aquí. |
+| HTTP y rutas | **Express** | `express` | Único framework. `node:http` puro obligaría a reimplementar body parsing, cookies y manejo de errores (más riesgo y más código que mantener); Fastify no aporta lo suficiente aquí. |
 | Base de datos | **`pg` + SQL crudo** | `pg` | Insustituible. Sin ORM (Prisma/Knex/TypeORM): la Parte 3 premia el SQL a mano y un ORM añade genera­ción, config y curva. |
 | Validación (entradas **y salida de la IA**) | **zod** | `zod` | El examen exige validar la respuesta del modelo **contra un esquema**; el mismo esquema valida todos los endpoints. Alternativa: validadores a mano → riesgo de olvidos y código repetitivo. |
 | Migraciones versionadas | Archivos `.sql` numerados + runner propio (~50 líneas con `fs` + `pg`) | 0 | Cumple "migraciones versionadas" sin ORM. Tabla `schema_migrations` con hash/nombre único. |
@@ -94,7 +94,7 @@ otro módulo: pasa por su servicio.
 ```jsonc
 {
   "scripts": {
-    "dev": "concurrently… "        // ⚠ sin dependencias: usar dos terminales o script shell
+    "dev": "sh scripts/dev.sh",   // 2 procesos en background, sin dependencias de terceros
     "build": "npm run build -w server && npm run build -w web",
     "migrate": "node server/dist/db/migrate.js",
     "seed": "psql $DATABASE_URL -f db/seed.sql",
@@ -103,8 +103,21 @@ otro módulo: pasa por su servicio.
   }
 }
 ```
-> Nota: `concurrently` se evita; el script `dev` se resuelve con un shell script de 5 líneas
-> o con `npm-run-all`... **decisión: dos procesos documentados en el README** (mínimo de deps).
+
+`scripts/dev.sh` (5 líneas, cero dependencias — la misma semántica que `concurrently`):
+
+```sh
+#!/bin/sh
+# Arranca backend y frontend. Alternativa manual: dos terminales con
+# `npm run dev -w server` y `npm run dev -w web`.
+trap 'kill 0' EXIT INT TERM
+npm run dev -w server &
+npm run dev -w web &
+wait
+```
+
+> Decisión: **no se usa `concurrently` ni `npm-run-all`** (dependencias que solo ahorran un `&`).
+> Este script, o simplemente dos terminales, cubren el caso. El README usa este mismo comando.
 
 ## 6. Variables de entorno (`.env.example` versionado, valores reales nunca)
 

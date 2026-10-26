@@ -11,16 +11,18 @@ misma app (la Parte 1 la construye; Partes 2 y 3 se montan encima; la Parte 4 es
 |---|---|---|
 | Fullstack con TypeScript, React y Node | Parte 1 | **40 %** |
 | Integraciones con terceros y procesos asíncronos | Parte 2.1 | **25 %** (Parte 2 completa) |
-| IA dentro del producto y como asistente de desarrollo, entendiendo lo que genera | Parte 2.2 y README | (incluido en Parte 2) |
+| IA dentro del producto y como asistente de desarrollo, entendiendo lo que genera | Parte 2.2, README y sustentación | (incluido en Parte 2) |
 | PostgreSQL | Parte 3 | **10 %** |
-| Resolución metódica de problemas y comunicación | Parte 4 | **15 %** |
+| Resolución metódica de problemas y comunicación | Parte 4 y sustentación | **15 %** |
 | Ruby on Rails (deseable) | **Bonus** | **hasta +5 puntos** |
 
 - Suma ponderada: 40 + 25 + 10 + 15 = **90 %**. El 10 % restante no está especificado
-  (asumo README y uso de IA). **Ambigüedad → anotar en README.**
+  (asumo README, uso de IA y la preparación de la sustentación). **Ambigüedad → anotar en README.**
 
 ### Plazo y condiciones
 - **48–72 horas** desde la recepción (el plazo exacto se confirma al enviarla). Nuestro caso: **48 h**.
+- Después: **sustentación de 45 minutos con el equipo** → su preparación (guion de demo, dudas
+  frecuentes, decisiones) está contemplada en la Fase 8 del plan.
 - El examen encaja junto a un trabajo actual (diseñado para no requerir jornadas continuas).
 
 ### Reglas del enunciado (evalúan tanto como el código)
@@ -85,6 +87,10 @@ Si no lo es → la pantalla **dice por qué** y **sugiere el siguiente horario d
 - ✅ **Validación de entradas en el servidor**.
 - ✅ **Pruebas unitarias del cotizador y de las transiciones de estado**.
 
+> **Accesibilidad:** no aparece en el PDF, pero se asume **WCAG 2.1 AA en los flujos core**
+> (cotizar → reservar → admin) por calidad profesional, **sin añadir dependencias** → guía
+> completa en [`05-accesibilidad.md`](05-accesibilidad.md).
+
 ---
 
 ## 3. Interfaces (pantallas) requeridas
@@ -116,8 +122,11 @@ Si no lo es → la pantalla **dice por qué** y **sugiere el siguiente horario d
   → **Decisión: escalonado (no acumulativo)**: ≥8 h aplica 20 %, no 10 % + 20 %.
 - Sábado: recargo = **(base − descuento) × 1,25** (25 % sobre el valor **ya descontado**).
 - Disponibilidad: solape **estricto** (una termina 10:00 y otra empieza 10:00 → **no** se cruzan).
-- **Decisión a documentar:** `confirmed` bloquea; proponemos que `completed` también bloquee;
-  `draft` y `cancelled` **no** bloquean.
+- **Decisión final (contrastada con el PDF):** solo **`confirmed`** bloquea. El enunciado dice
+  literalmente *"no puede cruzarse con otra reserva **confirmada** de la misma sala"*.
+  `draft` y `cancelled` **no** bloquean; `completed` tampoco (siempre terminó en el pasado y no
+  puede solapar un turno futuro). Añadimos además el **rechazo de horarios en el pasado**, que es
+  lo que hace innecesario bloquear por `completed`. → DDL: `WHERE (status = 'confirmed')`.
 
 **Reserva:**
 - Borrador retomable: cerrar navegador en el paso 2 → al volver sigue ahí con los datos.
@@ -174,7 +183,8 @@ espera creciente → `failed` visible; reinicio del servidor no pierde la cola.
 ```
 users            (id, email UNIQUE, full_name, role CHECK(client|admin), password_hash, created_at)
 sessions         (id, user_id FK, expires_at)                      -- cookie firmada HMAC
-rooms            (id, name, size CHECK(small|medium|large), hourly_rate numeric(14,2), active)
+rooms            (id, name, size CHECK(small|medium|large), capacity int,
+                  hourly_rate numeric(14,2), active)
 bookings         (id, customer_name, customer_email, room_id FK, starts_at, ends_at,
                   status CHECK(draft|confirmed|completed|cancelled), cancel_reason,
                   total numeric(14,2)  -- precio PACTADO al confirmar, no se recalcula
@@ -191,6 +201,12 @@ schema_migrations(id, name UNIQUE, applied_at)                    -- runner prop
 
 - **Extensión:** `btree_gist` (viene con PostgreSQL) para el constraint de exclusión de solapes.
 - **Zona horaria única:** `America/Bogota` documentada y aplicada en backend y en las consultas.
+- **No existe tabla de recordatorios (`reminders`):** el escenario de WhatsApp de la Parte 4 es
+  **solo narrativa para el análisis del incidente** — el enunciado dice textual *"No hay que
+  programar"*. Nuestra app no implementa recordatorios. Tampoco procede del esquema de la Parte 3,
+  que es un esquema aparte (*"no tiene que coincidir con el de tu Parte 1"*).
+- **`rooms.capacity`** (adición nuestra): el ejemplo del chat pide *"6 personas"* y el PDF solo
+  define el tamaño. Seed: `small=4`, `medium=8`, `large=12` → ver §14.
 
 ---
 
@@ -223,6 +239,12 @@ Chat donde el cliente escribe en lenguaje natural y el asistente lo guía hasta 
 lista: **pregunta lo que falta → muestra cotización y disponibilidad → propone otro horario si no
 hay cupo → crea la reserva en `draft` con datos prellenados**. El cliente **confirma con un botón
 de la app, nunca desde el chat**.
+
+**Ejemplo literal del enunciado → test de aceptación de la Fase 5:** *"necesito una sala para
+6 personas el sábado en la mañana, con proyector"*. De ese ejemplo se desprenden dos cosas:
+① el asistente debe poder filtrar por **capacidad** (por eso `rooms.capacity`, ver §6/§14) o
+preguntar si le falta el dato; ② "el sábado en la mañana" es una fecha relativa que resuelve el
+código, no el modelo.
 
 **4 reglas obligatorias:**
 1. **Nunca calcula precios ni disponibilidad**: los obtiene del cotizador de la Parte 1.
@@ -297,12 +319,20 @@ Problema en el modelo: `before_save :regenerate_invoice` **destruye y reconstruy
 
 ## 14. Ambigüedades detectadas → decidir y documentar en README
 
-1. ¿`completed` también bloquea disponibilidad? (proponemos **sí**)
+1. ¿`completed` también bloquea disponibilidad? → **Resuelto contra el PDF: NO.** Enunciado
+   literal: *"otra reserva **confirmada**"*. Decisión final: solo `confirmed` (ver §4).
 2. ¿Descuentos **escalonados** o acumulativos? (proponemos **escalonados**)
 3. ¿Los servicios adicionales entran en el `total` y participan en descuento/recargo?
    (proponemos: **entran en el total; descuento y recargo solo sobre la tarifa horaria**)
 4. ¿Zona horaria del negocio? (proponemos **`America/Bogota`** explícita en todo)
 5. ¿Reserva que termina **exactamente** a las 21:00? (proponemos **válida**)
 6. ¿Fecha en el pasado? (proponemos **rechazo**)
-7. El 10 % de la ponderación no especificado en el PDF.
-8. Id de "sala" y formato de duración en `POST /api/quotes` (la API no los define).
+7. El 10 % de la ponderación no especificado en el PDF (asumo: README + uso de IA + preparación
+   de la sustentación).
+8. Formato exacto de `POST /api/quotes` (el PDF solo dice *"sala, fecha, hora de inicio y
+   duración"*). → **Decisión:** `{ roomId: number, date: 'YYYY-MM-DD', startTime: 'HH:MM',
+   durationMinutes: number }` con `durationMinutes` entre 30 y 600 y múltiplo de 30 (enteros,
+   sin floats).
+9. **Capacidad de las salas**: el PDF solo define `size` (pequeña/mediana/grande), pero el
+   ejemplo del chat habla de *"6 personas"*. → **Decisión:** columna `rooms.capacity`
+   (`small=4`, `medium=8`, `large=12`) y el asistente filtra por ella.
