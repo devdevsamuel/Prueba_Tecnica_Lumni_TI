@@ -22,6 +22,7 @@ export interface AdminGateProps {
 const TABS = [
   { to: '/admin', label: 'Reservas', end: true },
   { to: '/admin/correos', label: 'Correos', end: true },
+  { to: '/admin/asistente', label: 'Asistente', end: true },
 ] as const;
 
 export function AdminGate({ session, title, intro, children }: AdminGateProps) {

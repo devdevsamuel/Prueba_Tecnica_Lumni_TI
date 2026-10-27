@@ -2,12 +2,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Pool } from 'pg';
+import type { AiLimits } from '../../config.js';
 import type { Clock } from '../../core/clock.js';
 import { BOGOTA_TZ, bogotaDateStr } from '../../core/time.js';
 import { saveDraft, DraftRuleError } from '../bookings/service.js';
 import { listRooms, quoteRoom } from '../quotes/service.js';
 import type { Slot as SuggestedSlot } from '../quotes/quote.js';
-import type { AiClient, ChatTurn } from './aiClient.js';
+import type { AiClient, AiUsage, ChatTurn } from './aiClient.js';
 import { resolveSlot, type DayRef, type PartOfDay } from './dateResolver.js';
 import { parseActionValue, parseAssistantAction, type AssistantAction } from './schema.js';
 
@@ -21,11 +22,27 @@ import { parseActionValue, parseAssistantAction, type AssistantAction } from './
  * Todo lo que toca datos reales pasa por el servicio de otro módulo; aquí no
  * hay SQL de salas ni de reservas (docs/02 §4). La única SQL propia es la de
  * `chat_sessions` y `chat_messages`.
+ *
+ * **Fase 5b (docs/03 §6.3):** antes de llamar al modelo se comprueban los
+ * límites de uso (por sesión y presupuesto mensual) y el `usage` de cada
+ * llamada se guarda en el mensaje: de ahí cuelga la trazabilidad del panel.
  */
 export interface ChatDeps {
   readonly pool: Pool;
   readonly clock: Clock;
   readonly ai: AiClient;
+  readonly limits: AiLimits;
+}
+
+/** Límite por sesión alcanzado: la ruta lo traduce a 429 + `Retry-After`. */
+export class RateLimitError extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterSeconds: number,
+  ) {
+    super(message);
+    this.name = 'RateLimitError';
+  }
 }
 
 /** Tarjeta que ve la UI. Los precios son REALES: los calcula el cotizador. */
@@ -59,11 +76,17 @@ export interface ChatMessageView {
   readonly card: ChatCard | null;
 }
 
-const HISTORY_LIMIT = 10;
+/** Historial que se reenvía al modelo: 6 mensajes bastan para el contexto y
+ *  recortan ~30 % de entrada en conversaciones largas (Fase 5b). */
+const HISTORY_LIMIT = 6;
 
 /** Fijo cuando la salida del modelo no cumple el esquema (regla 4). */
 const FALLBACK_REPLY =
   'No he podido interpretar tu mensaje. Dime la sala, el día y la duración y lo preparo.';
+
+/** Fijo cuando se supera el presupuesto mensual de tokens (sin llamar al modelo). */
+const BUDGET_REPLY =
+  'El asistente ha alcanzado su límite de uso de este mes. Escríbenos directamente y preparamos tu reserva.';
 
 // El prompt vive fuera de `src/` para que exista igual en `dist/` (tsc no copia .md):
 // desde `src/modules/chat/` y desde `dist/modules/chat/` el camino es el mismo.
@@ -157,11 +180,95 @@ async function appendMessage(
   role: 'user' | 'assistant',
   content: string,
   action: { action: AssistantAction; card: ChatCard | null } | null,
+  usage?: AiUsage | null,
 ): Promise<void> {
   await pool.query(
-    `INSERT INTO chat_messages (session_id, role, content, action_json) VALUES ($1, $2, $3, $4)`,
-    [sessionId, role, content, action === null ? null : JSON.stringify(action)],
+    `INSERT INTO chat_messages
+       (session_id, role, content, action_json, prompt_tokens, completion_tokens, reasoning_tokens, cost_usd, model)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      sessionId,
+      role,
+      content,
+      action === null ? null : JSON.stringify(action),
+      usage?.promptTokens ?? 0,
+      usage?.completionTokens ?? 0,
+      usage?.reasoningTokens ?? 0,
+      usage?.costUsd ?? 0,
+      usage?.model ?? null,
+    ],
   );
+}
+
+// ── Límites de uso (Fase 5b, docs/03 §6.3) ──────────────────────────────────
+
+/** Suma el consumo de dos llamadas (el reintento del esquema también gasta). */
+function mergeUsage(a: AiUsage, b: AiUsage): AiUsage {
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    completionTokens: a.completionTokens + b.completionTokens,
+    reasoningTokens: a.reasoningTokens + b.reasoningTokens,
+    costUsd: a.costUsd + b.costUsd,
+    model: b.model || a.model,
+  };
+}
+
+/**
+ * Ventanas móviles sobre los mensajes propios de la sesión (5/min y 50/24 h).
+ * Se calcula TODO en la BD con `now()`: la misma referencia que usa
+ * `created_at`, así no hay relojes en desacuerdo. El `Retry-After` sale de la
+ * fila más antigua de la ventana (segundos que faltan para que salga de ella).
+ */
+async function assertWithinRate(deps: ChatDeps, sessionId: string): Promise<void> {
+  const { rows } = await deps.pool.query<{
+    last_minute: number;
+    last_day: number;
+    retry_minute: number | null;
+    retry_day: number | null;
+  }>(
+    `SELECT count(*) FILTER (WHERE created_at > now() - interval '1 minute')::int AS last_minute,
+            count(*) FILTER (WHERE created_at > now() - interval '1 day')::int AS last_day,
+            ceil(60 - extract(epoch FROM (now() - min(created_at)
+              FILTER (WHERE created_at > now() - interval '1 minute'))))::int AS retry_minute,
+            ceil(86400 - extract(epoch FROM (now() - min(created_at)
+              FILTER (WHERE created_at > now() - interval '1 day'))))::int AS retry_day
+       FROM chat_messages
+      WHERE session_id = $1 AND role = 'user'`,
+    [sessionId],
+  );
+  const row = rows[0];
+  if (!row) return;
+  if (row.last_minute >= deps.limits.perMinute) {
+    const seconds = Math.max(1, row.retry_minute ?? 60);
+    throw new RateLimitError(
+      `Has enviado demasiados mensajes seguidos. Espera ${seconds} s y vuelve a escribir.`,
+      seconds,
+    );
+  }
+  if (row.last_day >= deps.limits.perDay) {
+    const seconds = Math.max(1, row.retry_day ?? 3600);
+    throw new RateLimitError(
+      'Has alcanzado el límite diario de mensajes del asistente. Vuelve más tarde.',
+      seconds,
+    );
+  }
+}
+
+/**
+ * Presupuesto global mensual de tokens (entrada + salida). Vacío en `.env` =
+ * sin límite; si está activo y se supera, se contesta con el mensaje fijo
+ * **sin llamar al modelo** (corte de coste real, no solo un aviso).
+ */
+async function isBudgetExhausted(deps: ChatDeps): Promise<boolean> {
+  const budget = deps.limits.monthlyTokenBudget;
+  if (budget === undefined) return false;
+  const { rows } = await deps.pool.query<{ used: string }>(
+    `SELECT COALESCE(sum(prompt_tokens + completion_tokens), 0)::bigint AS used
+       FROM chat_messages
+      WHERE created_at >= date_trunc('month', now() AT TIME ZONE $1) AT TIME ZONE $1`,
+    [BOGOTA_TZ],
+  );
+  return Number(rows[0]?.used ?? 0) >= budget;
 }
 
 // ── Acciones: el registro es el que se amplía (docs/03 §7-O) ────────────────
@@ -395,7 +502,11 @@ export async function sendMessage(
   sessionId: string,
   content: string,
 ): Promise<ChatMessageView[]> {
-  // 1) historial (ANTES de guardar el mensaje nuevo, para que no se repita)
+  // 0) Límites ANTES de tocar el modelo y ANTES de persistir nada: un 429 no
+  //    gasta tokens y deja la conversación intacta para un reintento limpio.
+  await assertWithinRate(deps, sessionId);
+
+  // 1) historial para el modelo (sin el mensaje actual: se añade abajo en turno)
   const { rows: previous } = await deps.pool.query<{ role: string; content: string }>(
     `SELECT role, content FROM chat_messages
       WHERE session_id = $1 ORDER BY id DESC LIMIT $2`,
@@ -405,7 +516,12 @@ export async function sendMessage(
     .reverse()
     .map((row) => ({ role: row.role === 'assistant' ? 'assistant' : 'user', content: row.content }));
 
-  await appendMessage(deps.pool, sessionId, 'user', content, null);
+  // 2) Presupuesto mensual agotado → respuesta fija SIN llamar al modelo.
+  if (await isBudgetExhausted(deps)) {
+    await appendMessage(deps.pool, sessionId, 'user', content, null);
+    await appendMessage(deps.pool, sessionId, 'assistant', BUDGET_REPLY, null);
+    return history(deps.pool, sessionId);
+  }
 
   const turns: ChatTurn[] = [
     { role: 'system', content: await systemPrompt(deps) },
@@ -413,13 +529,17 @@ export async function sendMessage(
     { role: 'user', content },
   ];
 
-  // 2-3) modelo
-  let raw = await deps.ai.complete(turns, sessionId);
+  // 3-4) modelo (+ 1 reintento si zod falla); el consumo se acumula porque las
+  //      dos llamadas gastan. Si el proveedor falla o corta la cuota, PROPAGA
+  //      sin haber persistido nada → el reintento del cliente no duplica.
+  const first = await deps.ai.complete(turns, sessionId);
+  let usage = first.usage;
+  let raw = first.content;
   let parsed = tryParseAction(raw);
 
   if (!parsed.ok) {
     // 1 reintento con el motivo del esquema (docs/04 §6).
-    raw = await deps.ai.complete(
+    const second = await deps.ai.complete(
       [
         ...turns,
         { role: 'assistant', content: raw.slice(0, 500) },
@@ -430,22 +550,33 @@ export async function sendMessage(
       ],
       sessionId,
     );
+    usage = mergeUsage(usage, second.usage);
+    raw = second.content;
     parsed = tryParseAction(raw);
   }
 
+  await appendMessage(deps.pool, sessionId, 'user', content, null);
+
   if (!parsed.ok) {
-    // 4) salida fuera del esquema → mensaje fijo; nada se ejecuta.
-    await appendMessage(deps.pool, sessionId, 'assistant', FALLBACK_REPLY, null);
+    // 5) salida fuera del esquema → mensaje fijo; nada se ejecuta.
+    await appendMessage(deps.pool, sessionId, 'assistant', FALLBACK_REPLY, null, usage);
     return history(deps.pool, sessionId);
   }
 
-  // 5-6) despacho con datos reales
+  // 6) despacho con datos reales
   const outcome = await dispatch(deps, parsed.action);
 
-  // 7) persistir y devolver la conversación completa (la UI solo reemplaza)
-  await appendMessage(deps.pool, sessionId, 'assistant', outcome.reply, {
-    action: parsed.action,
-    card: outcome.card,
-  });
+  // 7) persistir con el consumo real y devolver la conversación completa
+  await appendMessage(
+    deps.pool,
+    sessionId,
+    'assistant',
+    outcome.reply,
+    {
+      action: parsed.action,
+      card: outcome.card,
+    },
+    usage,
+  );
   return history(deps.pool, sessionId);
 }

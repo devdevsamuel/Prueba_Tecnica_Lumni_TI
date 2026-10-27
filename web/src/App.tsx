@@ -3,6 +3,7 @@ import { AdminPage } from './pages/AdminPage';
 import { AdminBookingPage } from './pages/AdminBookingPage';
 import { AdminEmailsPage } from './pages/AdminEmailsPage';
 import { AdminEmailDetailPage } from './pages/AdminEmailDetailPage';
+import { AdminChatPage } from './pages/AdminChatPage';
 import { BookingWizardPage } from './pages/BookingWizardPage';
 import { ChatPage } from './pages/ChatPage';
 import { QuotePage } from './pages/QuotePage';
@@ -51,6 +52,7 @@ export function App() {
           <Route path="/admin/reserva/:id" element={<AdminBookingPage />} />
           <Route path="/admin/correos" element={<AdminEmailsPage />} />
           <Route path="/admin/correos/:id" element={<AdminEmailDetailPage />} />
+          <Route path="/admin/asistente" element={<AdminChatPage />} />
           <Route path="/chat" element={<ChatPage />} />
         </Routes>
       </main>

@@ -1,8 +1,9 @@
 # AGENTS.md — instrucciones del proyecto
 
 Reserva de salas de coworking: TypeScript estricto, React + Vite, Express, PostgreSQL.
-**Estado: ~90 % — fases 0, 1, 2, 3, 7, 6, 4 y 5 implementadas** (Parte 1 completa, incidente,
-consultas SQL, correo en segundo plano y chat con IA). Pendiente: 8 — cierre. Este archivo
+**Estado: ~90 % — fases 0, 1, 2, 3, 7, 6, 4, 5 y 5b implementadas** (Parte 1 completa, incidente,
+consultas SQL, correo en segundo plano, chat con IA y control de uso/trazabilidad de tokens).
+Pendiente: 8 — cierre. Este archivo
 solo contiene reglas de trabajo; los requisitos, la arquitectura y los pasos ya están documentados
 abajo, no se repiten aquí.
 

@@ -130,7 +130,17 @@ TZ=America/Bogota
 AI_BASE_URL=https://opencode.ai/inference/go/openai/v1
 AI_API_KEY=oc_sk_...
 AI_MODEL=glm-5.3-flash
+# Control de uso (Fase 5b): tope de salida por llamada, ventanas móviles por
+# sesión y presupuesto mensual global en tokens (vacío = sin límite).
+AI_MAX_TOKENS=4000
+AI_MAX_PER_SESSION_MIN=5
+AI_MAX_PER_SESSION_DAY=50
+AI_MONTHLY_TOKEN_BUDGET=
 ```
+
+`AI_MAX_TOKENS` sube a 4.000 porque los modelos de razonamiento gastan el tope
+"pensando"; `AI_MAX_PER_SESSION_*` protege la cuota por conversación y
+`AI_MONTHLY_TOKEN_BUDGET` es la red de seguridad global (ver `03` §6.3).
 
 ## 7. Cómo se refleja SOLID en esta estructura
 

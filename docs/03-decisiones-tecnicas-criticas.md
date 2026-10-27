@@ -176,6 +176,34 @@ usuario → POST /api/chat
 - **Fin del flujo:** `action:'create_draft'` → crea el borrador **rellenado** → la UI muestra el
   botón "Confirmar reserva" que llama al endpoint normal (`/api/bookings/:id/confirm`).
 
+### 6.3 Control de uso y trazabilidad (Fase 5b)
+
+**Problema:** el chat es anónimo y cada turno puede consumir miles de tokens (los modelos de
+razonamiento gastan el tope "pensando"). Un bucle, un script o un pico de uso podía agotar la cuota
+del proveedor y dejar el asistente caído. La solución ataca el coste en **4 capas** y no añade ni
+tablas ni dependencias:
+
+| Capa | Decisión | Dónde |
+|---|---|---|
+| **Observabilidad** | `chat_messages` guarda `prompt_tokens`, `completion_tokens`, `reasoning_tokens`, `cost_usd` y `model` (migración `0006`). `completion_tokens` **ya incluye** el razonamiento: se muestran por separado, nunca se suman dos veces. Los mensajes de usuario llevan 0 tokens y `model` NULL. | `db/migrations/0006_chat_usage.sql` |
+| **Límites por sesión** | Ventanas móviles calculadas en SQL sobre `chat_messages` (sin tablas nuevas ni contadores en memoria): **5/min** y **50/24 h** por defecto (`AI_MAX_PER_SESSION_MIN/DAY`). Al superarlas: **429 `rate_limited`** + `Retry-After` = segundos que faltan para que la fila más antigua de la ventana salga de ella. | `chat/service.ts` (`assertWithinRate`) |
+| **Presupuesto global** | Tope mensual opcional en tokens entrada+salida (`AI_MONTHLY_TOKEN_BUDGET`, vacío = sin límite). Se mide el **mes natural en `America/Bogota`**. Si se agota, se responde un mensaje fijo **sin llamar al modelo** y se persiste el turno; la UI sigue funcionando. | `chat/service.ts` (`isBudgetExhausted`) |
+| **Reducción de coste** | Historial recortado a **6 turnos** (`HISTORY_LIMIT`), `AI_MAX_TOKENS` como env (default 4.000), un solo reintento solo si zod falla, y el mensaje del usuario se persiste **después** de la respuesta: un fallo del proveedor no deja basura ni duplica al reintentar. | `chat/service.ts` |
+| **Cuota del proveedor** | HTTP 429/402 del proveedor → `AiQuotaError` → **429 `ai_quota`** + `Retry-After: 3600`, distinto de una caída (502). | `chat/aiClient.ts` + `chat/routes.ts` |
+| **Trazabilidad** | Pestaña **Asistente** en el admin (`/admin/asistente`) + `GET /api/admin/chat/usage` (solo admin): agregados (tokens, coste, turnos, conversaciones, uso del mes vs presupuesto, modelo) y tabla paginada de mensajes con vista previa de 140 caracteres. | `admin/routes.ts` + `web/pages/AdminChatPage.tsx` |
+| **Pruebas** | `chat-limits.integration.test.ts`: límite por minuto y por día (429 + `Retry-After`), presupuesto agotado sin llamar al doble, 429 del proveedor, `usage` persistido y sumado en el reintento, y el endpoint del admin con 401/403/200/400. | `server/test/` |
+
+> **Límite honesto del diseño:** `POST /api/chat` es anónimo y el cliente puede descartar la cookie
+> `chat_sid` para "estrenar" sesión, así que el límite por sesión frena el uso normal pero **no es
+> una defensa contra abuso deliberado**. El presupuesto global mensual es la red de seguridad real;
+> por eso se documenta y se deja listo antes de pasar a un modelo de pago. Un límite por IP
+> requeriría confiar en `X-Forwarded-For` (falsificable sin proxy propio) y una tabla de
+> contadores: se descartó por complejidad y porque el presupuesto ya acota el gasto total.
+
+> **Por qué no dos tablas de contadores:** los límites son ventanas móviles sobre datos que ya
+> existen; un contador habría que reiniciarlo, sincronizarlo y podría desviarse de la realidad. El
+> coste es un `count(*)` filtrado por `session_id` (hay índice `chat_messages_session_idx`).
+
 ## 7. Aplicación de SOLID (cómo se materializa en este proyecto)
 
 > Objetivo: código mantenible y testeable **sin** caer en over-engineering (no usamos NestJS ni

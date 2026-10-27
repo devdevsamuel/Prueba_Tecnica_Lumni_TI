@@ -16,7 +16,7 @@
 | 2 | Fase 7: Parte 4 (`INCIDENTE.md`, solo escritura) | **55 %** |
 | 3 | Fase 6: Parte 3 (`consultas.sql`) | **65 %** |
 | 4 | Fase 4: Parte 2.1 (correo asíncrono) | ~80 % |
-| 5 | Fase 5: Parte 2.2 (chat con IA) | ~90 % |
+| 5 | Fase 5: Parte 2.2 (chat con IA) + Fase 5b (control de uso) | ~90 % |
 | 6 | Fase 8: README + pulido + Uso de IA | cierre |
 
 > **Origen de los porcentajes:** pesos literales del PDF (40 + 25 + 10 + 15 = 90 %; el 10 %
@@ -285,6 +285,31 @@ cubiertos (`06` §3).
 - **Test de la bandeja de correos (Fase 4) endurecido:** la bandeja es global y en la BD de
   desarrollo conviven correos reales, así que el test ya no asume que todos los `sent` son suyos:
   exige que los suyos estén presentes (aislamiento correcto entre tests y uso real).
+
+## 6b. Fase 5b — Control de uso del asistente ✅ (hecha)
+
+Añadida al cerrar la Fase 5 por riesgo real de cuota: la prueba usaba el modelo gratuito, pero el
+chat anónimo podía agotar la suscripción del proveedor.
+
+- [x] **Migración `0006`**: `prompt_tokens`, `completion_tokens`, `reasoning_tokens`, `cost_usd` y
+      `model` en `chat_messages` (compatible con filas existentes: defaults 0/NULL).
+- [x] **Límites por sesión** con ventanas móviles en SQL: 5/minuto y 50/24 h configurables por env;
+      429 `rate_limited` + `Retry-After` calculado desde la fila más antigua de la ventana.
+- [x] **Presupuesto mensual global** opcional (mes natural de Bogotá): al agotarse responde un
+      mensaje fijo **sin llamar al modelo** y deja constancia en la conversación.
+- [x] **Cuota del proveedor** (429/402) → 429 `ai_quota` propio, distinto de la caída 502.
+- [x] **Menos coste**: historial a 6 turnos, `AI_MAX_TOKENS` por env (default 4.000), el mensaje
+      del usuario se guarda después de la respuesta (un fallo no duplica al reintentar) y el
+      consumo de las dos llamadas del reintento por esquema se suma.
+- [x] **Trazabilidad en el admin**: pestaña **Asistente** (`/admin/asistente`) con agregados, uso
+      del mes vs presupuesto y tabla paginada por mensaje; `GET /api/admin/chat/usage` tras
+      `requireRole('admin')`.
+- [x] **Tests** (`chat-limits.integration.test.ts`, 9 casos): límites minuto/día, presupuesto sin
+      llamada al modelo, cuota del proveedor, `usage` persistido y sumado, y contrato del endpoint
+      del admin (401/403/200/400).
+
+**Criterio de "hecho":** un pico de mensajes deja de llegar al proveedor con un 429 reintentable,
+el gasto del mes se ve en el panel y la suite completa queda verde (121 tests).
 
 ## 7. Fase 6 — Parte 3: `consultas.sql` ✅ (hecha)
 

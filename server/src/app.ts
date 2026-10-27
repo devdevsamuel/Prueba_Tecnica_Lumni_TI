@@ -53,12 +53,18 @@ export function createApp(deps: AppDeps): express.Express {
       pool: deps.pool,
       clock: deps.clock,
       ai: deps.ai ?? new OpenCodeAiClient(deps.config.ai),
+      limits: deps.config.ai.limits,
       isProduction: deps.config.isProduction,
     }),
   );
 
   // Panel de administración (Fase 3): 401 sin sesión, 403 si no es admin.
-  app.use('/api/admin', requireRole('admin'), adminRouter({ pool: deps.pool, clock: deps.clock }));
+  // Lleva la config de IA para la trazabilidad de consumo (Fase 5b).
+  app.use(
+    '/api/admin',
+    requireRole('admin'),
+    adminRouter({ pool: deps.pool, clock: deps.clock, ai: deps.config.ai }),
+  );
 
   // Reservas (Fase 2) — antes que el cotizador por ser más específico.
   app.use('/api/bookings', bookingsRouter({ pool: deps.pool, clock: deps.clock }));

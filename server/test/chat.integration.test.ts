@@ -9,7 +9,7 @@ import type { Clock } from '../src/core/clock.js';
 import { bogotaWallToUtc } from '../src/core/time.js';
 import { createPool } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
-import type { AiClient, ChatTurn } from '../src/modules/chat/aiClient.js';
+import type { AiCompletion, AiClient, ChatTurn } from '../src/modules/chat/aiClient.js';
 
 /**
  * Integración de la Fase 5 (Parte 2.2). El modelo se sustituye por un doble de
@@ -23,7 +23,9 @@ import type { AiClient, ChatTurn } from '../src/modules/chat/aiClient.js';
 const FIXED_NOW = bogotaWallToUtc('2026-11-10', 8 * 60);
 const clock: Clock = { now: () => FIXED_NOW, sleep: async () => undefined };
 
-/** Doble del modelo: cola de respuestas + contador de llamadas. */
+/** Doble del modelo: cola de respuestas + contador de llamadas.
+ *  Devuelve consumo fijo por llamada (100/40/10 tokens, $0,001) para poder
+ *  comprobar que el `usage` se persiste y se suma en el reintento (Fase 5b). */
 class FakeAi implements AiClient {
   readonly turnsSeen: ChatTurn[][] = [];
   private queue: string[] = [];
@@ -32,11 +34,20 @@ class FakeAi implements AiClient {
     this.queue = [...responses];
   }
 
-  async complete(turns: readonly ChatTurn[], _sessionId: string): Promise<string> {
+  async complete(turns: readonly ChatTurn[], _sessionId: string): Promise<AiCompletion> {
     this.turnsSeen.push([...turns]);
     const next = this.queue.shift();
     if (next === undefined) throw new Error('FakeAi: no hay respuestas encoladas para este test.');
-    return next;
+    return {
+      content: next,
+      usage: {
+        promptTokens: 100,
+        completionTokens: 40,
+        reasoningTokens: 10,
+        costUsd: 0.001,
+        model: 'fake-model',
+      },
+    };
   }
 }
 

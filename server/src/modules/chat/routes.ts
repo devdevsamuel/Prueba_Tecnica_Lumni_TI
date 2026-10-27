@@ -1,11 +1,12 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
+import type { AiLimits } from '../../config.js';
 import type { Clock } from '../../core/clock.js';
 import { sendError } from '../../core/http.js';
 import { parseCookies } from '../auth/session.js';
-import { AiUnavailableError, type AiClient } from './aiClient.js';
-import { createSession, history, sendMessage, sessionExists } from './service.js';
+import { AiQuotaError, AiUnavailableError, type AiClient } from './aiClient.js';
+import { createSession, history, RateLimitError, sendMessage, sessionExists } from './service.js';
 
 /**
  * Rutas del chat (Parte 2.2): `POST /api/chat` para conversar y `GET /api/chat`
@@ -14,11 +15,15 @@ import { createSession, history, sendMessage, sessionExists } from './service.js
  * La sesión viaja en la cookie `chat_sid` (httpOnly). Ese valor es el id de la
  * conversación y también el que se manda en `x-opencode-session`: una conversación
  * por cookie, 1:1 con `chat_sessions.id` (docs/03 §6.1).
+ *
+ * Errores de uso (Fase 5b): límite por sesión y cuota del proveedor → **429**
+ * con `Retry-After` (la UI ofrece reintento); caída del proveedor → 502.
  */
 export interface ChatRoutesDeps {
   readonly pool: Pool;
   readonly clock: Clock;
   readonly ai: AiClient;
+  readonly limits: AiLimits;
   readonly isProduction: boolean;
 }
 
@@ -86,12 +91,29 @@ export function chatRouter(deps: ChatRoutesDeps): Router {
       }
 
       const messages = await sendMessage(
-        { pool: deps.pool, clock: deps.clock, ai: deps.ai },
+        { pool: deps.pool, clock: deps.clock, ai: deps.ai, limits: deps.limits },
         sessionId,
         parsed.data.content,
       );
       res.json({ messages });
     })().catch((error: unknown) => {
+      // Límite por sesión (5/min, 50/día): 429 + Retry-After para el reintento.
+      if (error instanceof RateLimitError) {
+        res.setHeader('Retry-After', String(error.retryAfterSeconds));
+        sendError(res, 429, 'rate_limited', error.message);
+        return;
+      }
+      // Cuota del plan agotada en el proveedor: es un tope, no una caída.
+      if (error instanceof AiQuotaError) {
+        res.setHeader('Retry-After', '3600');
+        sendError(
+          res,
+          429,
+          'ai_quota',
+          'El asistente ha alcanzado el límite de uso del servicio. Inténtalo más tarde.',
+        );
+        return;
+      }
       // El proveedor no responde: 502 con mensaje claro (la UI ofrece reintento).
       if (error instanceof AiUnavailableError) {
         sendError(res, 502, 'ai_unavailable', error.message);

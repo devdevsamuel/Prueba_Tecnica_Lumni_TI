@@ -1,7 +1,9 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
+import type { AiConfig } from '../../config.js';
 import type { Clock } from '../../core/clock.js';
 import { sendError, type ApiErrorDetail } from '../../core/http.js';
+import { BOGOTA_TZ } from '../../core/time.js';
 import { cancel, getBooking, type BookingDeps } from '../bookings/service.js';
 import { mapBookingError } from '../bookings/routes.js';
 import type { Pool } from 'pg';
@@ -16,6 +18,8 @@ import type { Pool } from 'pg';
 export interface AdminDeps {
   readonly pool: Pool;
   readonly clock: Clock;
+  /** Config de IA: aporta modelo y presupuesto a la trazabilidad (Fase 5b). */
+  readonly ai: AiConfig;
 }
 
 const STATUSES = ['draft', 'confirmed', 'completed', 'cancelled'] as const;
@@ -37,6 +41,11 @@ const EmailListQuerySchema = z.object({
   status: z.enum(EMAIL_STATUSES).optional(),
   page: z.coerce.number().int('page debe ser un entero').min(1).default(1),
   pageSize: z.coerce.number().int('pageSize debe ser un entero').min(1).max(100).default(10),
+});
+
+const ChatUsageQuerySchema = z.object({
+  page: z.coerce.number().int('page debe ser un entero').min(1).default(1),
+  pageSize: z.coerce.number().int('pageSize debe ser un entero').min(1).max(100).default(20),
 });
 
 const IdParamSchema = z.object({
@@ -267,6 +276,112 @@ export function adminRouter(deps: AdminDeps): Router {
           return;
         }
         res.json({ ...toEmailView(row), body: row.body ?? '' });
+      })
+      .catch(next);
+  });
+
+  // ── Trazabilidad de consumo del asistente (Fase 5b) ───────────────────────
+  // Lee chat_messages directamente (SQL de lectura del panel, igual que el
+  // resto): totales + turno paginado con el consumo de CADA llamada al modelo.
+
+  interface UsageRow {
+    readonly total_rows?: number;
+    readonly id: number;
+    readonly session_id: string;
+    readonly role: string;
+    readonly created_at: Date;
+    readonly preview: string;
+    readonly prompt_tokens: number;
+    readonly completion_tokens: number;
+    readonly reasoning_tokens: number;
+    readonly cost_usd: string;
+    readonly model: string | null;
+  }
+
+  router.get('/chat/usage', (req: Request, res: Response, next: NextFunction) => {
+    const parsed = ChatUsageQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      sendError(
+        res,
+        400,
+        'validation_error',
+        'Paginación inválida.',
+        validationDetails(parsed.error.issues),
+      );
+      return;
+    }
+    const { page, pageSize } = parsed.data;
+    const budget = deps.ai.limits.monthlyTokenBudget;
+
+    const summary = deps.pool.query<{
+      messages: number;
+      turns: number;
+      sessions: string;
+      prompt_tokens: string;
+      completion_tokens: string;
+      reasoning_tokens: string;
+      cost_usd: string;
+      month_tokens: string;
+    }>(
+      `SELECT count(*)::int AS messages,
+              count(*) FILTER (WHERE role = 'assistant')::int AS turns,
+              count(DISTINCT session_id)::bigint AS sessions,
+              COALESCE(sum(prompt_tokens), 0)::bigint AS prompt_tokens,
+              COALESCE(sum(completion_tokens), 0)::bigint AS completion_tokens,
+              COALESCE(sum(reasoning_tokens), 0)::bigint AS reasoning_tokens,
+              COALESCE(sum(cost_usd), 0)::numeric AS cost_usd,
+              COALESCE(sum(prompt_tokens + completion_tokens)
+                FILTER (WHERE created_at >= date_trunc('month', now() AT TIME ZONE $1)
+                                                 AT TIME ZONE $1), 0)::bigint AS month_tokens
+         FROM chat_messages`,
+      [BOGOTA_TZ],
+    );
+
+    const items = deps.pool.query<UsageRow>(
+      `SELECT count(*) OVER()::int AS total_rows,
+              id, session_id, role, created_at, left(content, 140) AS preview,
+              prompt_tokens, completion_tokens, reasoning_tokens, cost_usd, model
+         FROM chat_messages
+        ORDER BY created_at DESC, id DESC
+        LIMIT $1 OFFSET $2`,
+      [pageSize, (page - 1) * pageSize],
+    );
+
+    Promise.all([summary, items])
+      .then(([summaryResult, itemsResult]) => {
+        const s = summaryResult.rows[0];
+        const rows = itemsResult.rows;
+        const total = rows[0]?.total_rows ?? 0;
+        res.json({
+          summary: {
+            messages: s?.messages ?? 0,
+            turns: s?.turns ?? 0,
+            sessions: Number(s?.sessions ?? 0),
+            promptTokens: Number(s?.prompt_tokens ?? 0),
+            completionTokens: Number(s?.completion_tokens ?? 0),
+            reasoningTokens: Number(s?.reasoning_tokens ?? 0),
+            costUsd: Number(s?.cost_usd ?? 0),
+            monthTokens: Number(s?.month_tokens ?? 0),
+            monthBudget: budget ?? null,
+            model: deps.ai.model,
+          },
+          items: rows.map((row) => ({
+            id: row.id,
+            sessionId: row.session_id,
+            role: row.role === 'assistant' ? 'assistant' : 'user',
+            createdAt: row.created_at,
+            preview: row.preview,
+            promptTokens: row.prompt_tokens,
+            completionTokens: row.completion_tokens,
+            reasoningTokens: row.reasoning_tokens,
+            costUsd: Number(row.cost_usd),
+            model: row.model,
+          })),
+          page,
+          pageSize,
+          total,
+          totalPages: Math.ceil(total / pageSize),
+        });
       })
       .catch(next);
   });

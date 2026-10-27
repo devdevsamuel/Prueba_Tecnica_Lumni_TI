@@ -106,3 +106,52 @@ export function fetchEmails(
 export function fetchEmail(id: number, signal?: AbortSignal): Promise<EmailDetail> {
   return apiGet<EmailDetail>(`/api/admin/emails/${id}`, signal);
 }
+
+// ── Trazabilidad del asistente (Fase 5b) ────────────────────────────────────
+
+/** Un mensaje con su consumo. En los del usuario los tokens son 0 y `model` NULL. */
+export interface ChatUsageItem {
+  readonly id: number;
+  readonly sessionId: string;
+  readonly role: 'user' | 'assistant';
+  readonly createdAt: string;
+  readonly preview: string;
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly reasoningTokens: number;
+  readonly costUsd: number;
+  readonly model: string | null;
+}
+
+/** Agregados de toda la tabla + uso del mes natural (America/Bogota). */
+export interface ChatUsageSummary {
+  readonly messages: number;
+  readonly turns: number;
+  readonly sessions: number;
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly reasoningTokens: number;
+  readonly costUsd: number;
+  readonly monthTokens: number;
+  /** `null` = sin presupuesto configurado (solo se avisa del consumo). */
+  readonly monthBudget: number | null;
+  readonly model: string;
+}
+
+export interface ChatUsageResponse {
+  readonly summary: ChatUsageSummary;
+  readonly items: readonly ChatUsageItem[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+  readonly totalPages: number;
+}
+
+export function fetchChatUsage(
+  page: number,
+  pageSize: number,
+  signal?: AbortSignal,
+): Promise<ChatUsageResponse> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  return apiGet<ChatUsageResponse>(`/api/admin/chat/usage?${params.toString()}`, signal);
+}
