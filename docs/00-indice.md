@@ -2,19 +2,22 @@
 
 > Documento de trabajo para preparar la implementación. Origen: PDF
 > `Prueba_tecnica_Lumni_TI_F.pdf` (4 páginas, leído completo y contrastado).
-> Estado: **análisis + auditoría cerrados → fases 0, 1, 2, 3, 7, 6, 4 y 5 implementadas (~90 %)**;
-> pendiente 8 (cierre: README completo, pulido y sustentación). El detalle de cada fase vive en
+> Estado: **análisis + auditoría cerrados → fases 0, 1, 2, 3, 7, 6, 4, 5, 5b y 8 implementadas
+> (100 %)**. El cierre incluye README completo, pulido responsive/accesible y guion de
+> sustentación ([`07-sustentacion.md`](07-sustentacion.md)). El detalle de cada fase vive en
 > [`04-plan-por-fases.md`](04-plan-por-fases.md).
 
 | Archivo | Contenido |
 |---|---|
 | [01-evaluacion-y-requisitos.md](01-evaluacion-y-requisitos.md) | Qué evalúa la prueba (ponderaciones, plazo, entregables) + **todos los requisitos extraídos y organizados**: funcionales, reglas de negocio y casos límite, contratos de API, modelo de datos, seguridad, procesos asíncronos, IA, pruebas, SQL, incidente, documentación, bonus y ambigüedades. |
 | [02-stack-minimo-dependencias.md](02-stack-minimo-dependencias.md) | Stack elegido con **mínimo uso de dependencias**: tabla de dependencias justificada, qué NO usar, estructura del repositorio, scripts npm y variables de entorno. |
-| [03-decisiones-tecnicas-criticas.md](03-decisiones-tecnicas-criticas.md) | Decisiones técnicas clave: concurrencia, idempotencia, outbox de correos, arquitectura del chat con IA, capa de IA verificada con OpenCode Go (prueba real HTTP 200), auth sin dependencias, análisis del incidente y **aplicación práctica de los principios SOLID**. |
+| [03-decisiones-tecnicas-criticas.md](03-decisiones-tecnicas-criticas.md) | Decisiones técnicas clave: concurrencia, idempotencia, outbox de correos, arquitectura del chat con IA, capa de IA verificada con OpenCode Go (prueba real HTTP 200), auth sin dependencias, análisis del incidente, **aplicación práctica de los principios SOLID** y endurecimiento operativo (rol de menor privilegio y pool acotado, §12). |
 | [04-plan-por-fases.md](04-plan-por-fases.md) | **Plan de implementación por fases** ordenado por prioridad (peso y esfuerzo relativo), con tareas, pruebas, criterios de "hecho" y criterios de corte. **El progreso se mide con la tabla de pesos; el tiempo no es variable de planificación.** |
 | [05-accesibilidad.md](05-accesibilidad.md) | Consideraciones de **accesibilidad (WCAG 2.1 AA)** por fase: HTML semántico, teclado, formularios, regiones vivas, contraste, `<time>` y verificación sin dependencias nuevas. |
 | [06-ui-ux-limpia.md](06-ui-ux-limpia.md) | **UI y UX limpia** (minimal neutral tipo SaaS): principios, design tokens, contrato de estados (carga/vacío/error/éxito), patrones UX por flujo, catálogo de componentes con sus estados y verificación sin dependencias nuevas, por fase. |
-| [AUDITORIA-adversarial.md](AUDITORIA-adversarial.md) | Informe vivo de la auditoría tras la depuración: fuentes, estado actual de la planificación, **pendientes abiertos** y recomendaciones de implementación (los 13 hallazgos iniciales ya fueron cerrados y aplicados en `docs/` — veredictos en la tabla más abajo). |
+| [07-sustentacion.md](07-sustentacion.md) | **Guion de la sustentación de 45 min**: reparto del tiempo, checklist de demo limpia, recorrido en vivo, decisiones/código que se enseñan, dudas frecuentes con respuesta y cierre. |
+| [AUDITORIA-adversarial.md](AUDITORIA-adversarial.md) | Informe de la auditoría tras la depuración: fuentes, estado de la planificación, **pendientes cerrados en Fase 8** y recomendaciones implementadas (los 13 hallazgos iniciales ya fueron cerrados y aplicados en `docs/` — veredictos en la tabla más abajo). |
+| [AUDITORIA-chat-reglas.md](AUDITORIA-chat-reglas.md) | Auditoría de las reglas del chat: capacidad (`people`), `ask` y `suggest`; **D-01/D-03 resueltos** y D-02 como recomendación de UX. |
 
 ---
 
@@ -38,14 +41,15 @@
 | 11 | **Correo en segundo plano**: outbox transaccional, confirmar **no espera**, ≤5 reintentos con espera creciente, `failed` visible en admin, **un solo correo** por reserva | Parte 2.1 | Fase 4 | tests: 2 workers → 1 correo; backoff; agotamiento |
 | 12 | **Chat IA**: 4 reglas · prompt en **archivo propio** · salida validada con **zod** · fechas relativas resueltas **en código** · conversación **retomable al recargar** · creación en `draft` y confirmación solo desde la app · **regla 4 explicada en el README** | Parte 2.2 | Fase 5 | tests de inyección que deben seguir fallando |
 | 13 | **`consultas.sql`**: 5 consultas — morosos >30 días, solape estricto por pares, 12 meses × salas en hora de Colombia **con ceros**, inconsistencias, índices en **≤5 líneas** | Parte 3 | Fase 6 | `EXPLAIN (ANALYZE, BUFFERS)` contra datos generados |
-| 14 | **`INCIDENTE.md` ≤2 páginas** con método visible: hipótesis → evidencia → remediación → prevención → mensaje no técnico | Parte 4 | Fase 7 (`03` §9) | revisión de estructura y extensión |
+| 14 | **`INCIDENTE.md` ≤2 páginas** con método visible: hipótesis → evidencia a recoger → remediación → cambio de fondo y detección → mensaje no técnico (+ bonus Rails en §6 y anexo SQL) | Parte 4 | Fase 7 (`03` §9) | revisión de estructura y extensión |
 | 15 | **README**: cómo correrlo · decisiones · ambigüedades · fuera de alcance · concurrencia · idempotencia · regla 4 · **Uso de IA con ejemplo corregido** | Reglas | Fase 8 | checklist de secciones |
-| 16 | **Historial de commits real y pequeño** | Reglas | todas las fases | `git log --oneline` incremental |
-| 17 | **Claves solo en `.env`** (nunca en el repo) | Reglas | todas las fases | `git grep -iE "oc_sk_|api_key"` sin resultados |
+| 16 | **Historial de commits real y pequeño** | Reglas | todas las fases | `git log --oneline` incremental · convención en el `README` (§ Convención de commits) |
+| 17 | **Claves solo en `.env`** (nunca en el repo) | Reglas | todas las fases | `git grep -iE "oc_sk_\|api_key"` solo devuelve los placeholders de `.env.example` |
 | 18 | **Ambigüedades decididas y documentadas** en el README | Reglas | Fase 8 | cruzar con `01` §14 |
 | 19 | **Sustentación de 45 min preparada**: guion de demo en vivo, dudas frecuentes y decisiones defendibles | Reglas (PDF: *"Luego hay una sustentación de 45 minutos con el equipo"*) | Fase 8 | recorrido ensayado + respuestas de `01` §14 y `03` |
 | 20 | **Accesibilidad WCAG 2.1 AA en los flujos core** (no evaluada por el PDF; asumida por calidad) | Calidad profesional → `05-accesibilidad.md` | Fases 0–5 y 8 | pase solo-teclado + Lighthouse ≥ 95 + contraste de tokens |
 | 21 | **UI y UX limpia y consistente** en las 5 pantallas: tokens, 4 estados de interfaz, catálogo de componentes (no evaluada por el PDF; asumida por calidad) | Calidad profesional → `06-ui-ux-limpia.md` | Fases 0–5 y 8 | checklist de `06` §7 + guion de 60 s |
+| 22 | **Control de cuota de IA**: límites por sesión (5/min, 50/día), presupuesto mensual opcional y trazabilidad de tokens/coste en el admin (no evaluada por el PDF; asumida por operación) | Calidad operativa → `03` §6.3 | Fase 5b | tests de 429/presupuesto + pestaña **Asistente** |
 
 ---
 
@@ -74,8 +78,8 @@ extraídas (`pdf_extracted.txt`).
 3. **Prioridad acordada:** Parte 1 (40 %) → Parte 4 (15 %) → Parte 3 (10 %) → Parte 2 (25 %),
    por peso y esfuerzo relativo. **El tiempo no es variable de planificación** (sin estimaciones
    de horas): la única métrica de avance es la tabla de pesos de `04` §0.
-4. **Sustentación de 45 minutos:** reincorporada al alcance → preparación en la Fase 8
-   (guion de demo, dudas frecuentes, repaso de decisiones).
+4. **Sustentación de 45 minutos:** reincorporada al alcance → preparada en
+   [`07-sustentacion.md`](07-sustentacion.md) (Fase 8).
 
 ## Entregables finales del examen (recordatorio)
 
@@ -83,4 +87,4 @@ extraídas (`pdf_extracted.txt`).
 2. `README.md`: cómo correrlo, decisiones, qué quedó fuera y por qué + sección **Uso de IA**.
 3. `INCIDENTE.md` (Parte 4, máx. 2 páginas).
 4. Historial de commits real (varios pequeños).
-5. **Sustentación de 45 minutos con el equipo** (guion y dudas preparados en la Fase 8).
+5. **Sustentación de 45 minutos con el equipo** (guion y dudas en [`07-sustentacion.md`](07-sustentacion.md)).

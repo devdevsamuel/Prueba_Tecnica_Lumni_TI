@@ -57,7 +57,9 @@ export function App() {
         </Routes>
       </main>
       <footer className="app-footer">
-        <p>Prueba técnica Lumni TI · Reserva de salas de coworking</p>
+        <div className="app-footer__inner">
+          <p>Prueba técnica Lumni TI · Reserva de salas de coworking</p>
+        </div>
       </footer>
     </>
   );

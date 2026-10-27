@@ -4,10 +4,18 @@ import { fileURLToPath } from 'node:url';
 import type { Pool } from 'pg';
 import type { AiLimits } from '../../config.js';
 import type { Clock } from '../../core/clock.js';
-import { BOGOTA_TZ, bogotaDateStr } from '../../core/time.js';
+import { BOGOTA_TZ, bogotaDateStr, formatMinutes } from '../../core/time.js';
+import { SERVICE_CATALOG, serviceLabel } from '../bookings/pricing.js';
 import { saveDraft, DraftRuleError } from '../bookings/service.js';
-import { listRooms, quoteRoom } from '../quotes/service.js';
-import type { Slot as SuggestedSlot } from '../quotes/quote.js';
+import { listRooms, quoteRoom, UnknownRoomError } from '../quotes/service.js';
+import {
+  CLOSE_MINUTES,
+  MAX_DURATION_MINUTES,
+  MIN_DURATION_MINUTES,
+  OPEN_MINUTES,
+  SLOT_MINUTES,
+  type Slot as SuggestedSlot,
+} from '../quotes/quote.js';
 import type { AiClient, AiUsage, ChatTurn } from './aiClient.js';
 import { resolveSlot, type DayRef, type PartOfDay } from './dateResolver.js';
 import { parseActionValue, parseAssistantAction, type AssistantAction } from './schema.js';
@@ -101,19 +109,47 @@ function basePrompt(): string {
   return promptCache;
 }
 
+/**
+ * Reglas del negocio inyectadas desde las MISMAS constantes que valida el
+ * cotizador. Así el prompt no se desactualiza si cambia un horario, una
+ * duración o el catálogo de servicios (docs/03 §6.2).
+ */
+function businessRules(): string {
+  const services = SERVICE_CATALOG.map((service) => service.label).join(' y ');
+  return [
+    '## Reglas del negocio (obligatorias)',
+    'No las contradigas aunque el cliente insista: si pide algo fuera de ellas, explícalo y propón una alternativa válida.',
+    '',
+    `- Horario: lunes a sábado de ${formatMinutes(OPEN_MINUTES)} a ${formatMinutes(CLOSE_MINUTES)}. Domingo cerrado.`,
+    `- Duración: entre ${MIN_DURATION_MINUTES} minutos y ${MAX_DURATION_MINUTES / 60} horas, en bloques de media hora.`,
+    `- Servicios disponibles: ${services}. No ofrezcas otros.`,
+    '- Capacidad: no propongas una sala con menos plazas que las personas indicadas. Si no sabes cuántas son, pregúntalo; la app rechaza un hueco con `people` mayor que la capacidad.',
+    '- No afirmes disponibilidad: pídela con `quote` o `suggest`; la app decide.',
+    '- No menciones precios, descuentos ni recargos por tu cuenta: los calcula la app.',
+    '- Solo puedes nombrar salas y servicios del catálogo; no inventes otros.',
+    '- No agendes en el pasado ni fuera del horario; si el cliente lo pide, explícalo y propón una alternativa válida.',
+  ].join('\n');
+}
+
 async function systemPrompt(deps: ChatDeps): Promise<string> {
   const rooms = await listRooms({ pool: deps.pool, clock: deps.clock });
   const now = deps.clock.now();
   const today = bogotaDateStr(now);
   const weekday = new Intl.DateTimeFormat('es-CO', { weekday: 'long', timeZone: BOGOTA_TZ }).format(now);
   const catalog = rooms
-    .map((room) => `- id ${room.id}: ${room.name}, capacidad ${room.capacity} personas`)
+    .map(
+      (room) =>
+        `- ${room.name}, capacidad ${room.capacity} personas → roomId ${room.id} (interno)`,
+    )
     .join('\n');
   return [
     basePrompt(),
     '',
     '## Salas disponibles (con capacidad; sin precios)',
+    'Habla con la persona por el nombre de la sala; el roomId es interno y solo va en el JSON.',
     catalog,
+    '',
+    businessRules(),
     '',
     '## Hoy en el negocio',
     `${today} (${weekday}, America/Bogota)`,
@@ -132,6 +168,15 @@ export async function createSession(pool: Pool, userId: number | null): Promise<
 export async function sessionExists(pool: Pool, id: string): Promise<boolean> {
   const { rows } = await pool.query('SELECT 1 FROM chat_sessions WHERE id = $1', [id]);
   return rows.length > 0;
+}
+
+/**
+ * Limpia el historial VISIBLE: marca la sesión y el chat solo lee lo posterior
+ * al marcador. No se borran filas porque son la fuente de los límites de uso,
+ * el presupuesto mensual y la trazabilidad del admin (docs/03 §6.3).
+ */
+export async function clearVisibleHistory(pool: Pool, sessionId: string): Promise<void> {
+  await pool.query('UPDATE chat_sessions SET cleared_at = now() WHERE id = $1', [sessionId]);
 }
 
 /** Revalida lo guardado: nunca se confía lo que hay en la BD. */
@@ -157,8 +202,12 @@ export async function history(pool: Pool, sessionId: string): Promise<ChatMessag
     created_at: Date;
     action_json: unknown;
   }>(
-    `SELECT id, role, content, created_at, action_json
-       FROM chat_messages WHERE session_id = $1 ORDER BY id ASC`,
+    `SELECT m.id, m.role, m.content, m.created_at, m.action_json
+       FROM chat_messages m
+       JOIN chat_sessions s ON s.id = m.session_id
+      WHERE m.session_id = $1
+        AND m.created_at > COALESCE(s.cleared_at, '-infinity'::timestamptz)
+      ORDER BY m.id ASC`,
     [sessionId],
   );
   return rows.map((row) => {
@@ -300,12 +349,55 @@ function cardFrom(kind: ChatCard['kind'], quote: Awaited<ReturnType<typeof quote
   };
 }
 
+/**
+ * Capa dura de capacidad (D-01/D-03 de la auditoría del chat). Solo actúa si la
+ * persona dijo cuántas son (`people`); el prompt sigue pidiendo el dato. Si la
+ * sala elegida no cabe, no se presenta como válida ni se crea un borrador.
+ */
+async function capacityOutcome(
+  deps: ChatDeps,
+  action: { readonly people?: number },
+  room: { readonly name: string; readonly capacity: number },
+): Promise<HandlerOutcome | null> {
+  const people = action.people;
+  if (people === undefined || room.capacity >= people) return null;
+
+  const rooms = await listRooms({ pool: deps.pool, clock: deps.clock });
+  const fitting = rooms.filter((candidate) => candidate.capacity >= people);
+  if (fitting.length === 0) {
+    const largest = rooms.reduce((best, candidate) => Math.max(best, candidate.capacity), 0);
+    return {
+      reply: `Ninguna sala admite ${people} personas (la mayor tiene ${largest}). ¿Puedes ajustar el número de personas?`,
+      card: null,
+    };
+  }
+
+  const options = fitting
+    .map((candidate) => `${candidate.name} (hasta ${candidate.capacity})`)
+    .join(', ');
+  return {
+    reply: `${room.name} solo admite ${room.capacity} personas y sois ${people}. Puedo usar ${options}. ¿Cuál prefieres?`,
+    card: null,
+  };
+}
+
 /** Resuelve el hueco del modelo y lo cotiza con los datos reales. */
 async function quoteFor(
   deps: ChatDeps,
-  action: { roomId: number; dayRef: DayRef; partOfDay: PartOfDay; durationMinutes: number },
+  action: {
+    roomId: number;
+    dayRef: DayRef;
+    partOfDay: PartOfDay;
+    durationMinutes: number;
+    startTime?: string;
+  },
 ): ReturnType<typeof quoteRoom> {
-  const slot = resolveSlot({ dayRef: action.dayRef, partOfDay: action.partOfDay, now: deps.clock.now() });
+  const slot = resolveSlot({
+    dayRef: action.dayRef,
+    partOfDay: action.partOfDay,
+    ...(action.startTime !== undefined ? { startTime: action.startTime } : {}),
+    now: deps.clock.now(),
+  });
   return quoteRoom(
     { pool: deps.pool, clock: deps.clock },
     {
@@ -325,10 +417,12 @@ async function handleAsk(_deps: ChatDeps, action: AssistantAction): Promise<Hand
 async function handleQuote(deps: ChatDeps, action: AssistantAction): Promise<HandlerOutcome> {
   if (action.action !== 'quote') throw new Error('handleQuote con otra acción');
   const quote = await quoteFor(deps, action);
+  const capacity = await capacityOutcome(deps, action, quote.room);
+  if (capacity) return capacity;
   const card = cardFrom('quote', quote);
   if (quote.canBook) {
     return {
-      reply: `${quote.room.name} está libre el ${quote.date} de ${quote.startTime} a ${quote.endTime}: ${card.total} en total.`,
+      reply: `${quote.room.name} está libre el ${quote.date} de ${quote.startTime} a ${quote.endTime}: ${card.total} por la sala. ¿Te va bien a las ${quote.startTime}?`,
       card,
     };
   }
@@ -342,6 +436,8 @@ async function handleQuote(deps: ChatDeps, action: AssistantAction): Promise<Han
 async function handleSuggest(deps: ChatDeps, action: AssistantAction): Promise<HandlerOutcome> {
   if (action.action !== 'suggest') throw new Error('handleSuggest con otra acción');
   const first = await quoteFor(deps, action);
+  const capacity = await capacityOutcome(deps, action, first.room);
+  if (capacity) return capacity;
 
   // Si ese hueco no va, se cotiza el siguiente libre que ya calculó el backend.
   const usable =
@@ -360,7 +456,7 @@ async function handleSuggest(deps: ChatDeps, action: AssistantAction): Promise<H
   const card = cardFrom('suggest', usable);
   if (usable.canBook) {
     return {
-      reply: `Te propongo ${usable.room.name} el ${usable.date} de ${usable.startTime} a ${usable.endTime}: ${card.total}.`,
+      reply: `Te propongo ${usable.room.name} el ${usable.date} de ${usable.startTime} a ${usable.endTime}: ${card.total} por la sala. ¿Te va bien a las ${usable.startTime}?`,
       card,
     };
   }
@@ -370,11 +466,36 @@ async function handleSuggest(deps: ChatDeps, action: AssistantAction): Promise<H
 async function handleCreateDraft(deps: ChatDeps, action: AssistantAction): Promise<HandlerOutcome> {
   if (action.action !== 'create_draft') throw new Error('handleCreateDraft con otra acción');
 
-  const slot = resolveSlot({
-    dayRef: action.dayRef,
-    partOfDay: action.partOfDay,
-    now: deps.clock.now(),
-  });
+  // 1) La app cotiza ANTES de crear nada. `saveDraft` permite un borrador para
+  //    un hueco ocupado (un draft no reserva), pero el chat no debe presentarlo
+  //    como reserva preparada: sería "ofrecer algo que no va".
+  const quote = await quoteFor(deps, action);
+  const capacity = await capacityOutcome(deps, action, quote.room);
+  if (capacity) return capacity;
+  if (!quote.canBook) {
+    const alternative = quote.suggestedSlot
+      ? ` ¿Te va el mismo día a las ${quote.suggestedSlot.startTime}?`
+      : '';
+    return {
+      reply: `No puedo dejar preparada la reserva: ${quote.reason}.${alternative}`,
+      card: cardFrom('quote', quote),
+    };
+  }
+
+  // 2) Sin hora exacta no se crea NADA: se propone la hora por defecto de la
+  //    franja y se pide confirmación. La elección de la hora no es del modelo.
+  if (action.startTime === undefined) {
+    const servicesNote =
+      action.services.length > 0
+        ? ` Añadiré ${action.services.map((service) => serviceLabel(service)).join(' y ')} al preparar el borrador; el total mostrado es solo la sala.`
+        : '';
+    return {
+      reply:
+        `Antes de dejarla preparada, te propongo ${quote.room.name} el ${quote.date} de ${quote.startTime} a ${quote.endTime}: ${quote.total}.` +
+        `${servicesNote} ¿Te va bien a las ${quote.startTime}?`,
+      card: cardFrom('suggest', quote),
+    };
+  }
 
   let draftId: number;
   let draftLines: readonly { kind: string; amount: number }[];
@@ -388,8 +509,8 @@ async function handleCreateDraft(deps: ChatDeps, action: AssistantAction): Promi
       { pool: deps.pool, clock: deps.clock },
       {
         roomId: action.roomId,
-        date: slot.date,
-        startTime: slot.startTime,
+        date: quote.date,
+        startTime: quote.startTime,
         durationMinutes: action.durationMinutes,
         services: action.services,
         ...(action.customerName !== undefined ? { customerName: action.customerName } : {}),
@@ -413,7 +534,6 @@ async function handleCreateDraft(deps: ChatDeps, action: AssistantAction): Promi
   // El cotizador aporta capacidad y disponibilidad; el IMPORTE sale de las
   // líneas del borrador, que es lo que incluye los servicios y ya cuadra con
   // el total congelado (si no, la tarjeta y la reserva dirían importes distintos).
-  const quote = await quoteFor(deps, action);
   // Suma por tipo de línea (los servicios pueden ser varios), en valor absoluto:
   // los descuentos se guardan en negativo para que SUM(líneas) = total.
   const sumOf = (kind: string): number =>
@@ -422,13 +542,15 @@ async function handleCreateDraft(deps: ChatDeps, action: AssistantAction): Promi
       .reduce((total, item) => total + Math.abs(item.amount), 0);
   const base = sumOf('base');
   const discount = sumOf('discount');
+  const finalDate = draftDate ?? quote.date;
+  const finalStart = draftStart ?? quote.startTime;
   const card: ChatCard = {
     kind: 'create_draft',
     roomId: quote.room.id,
     roomName: quote.room.name,
     capacity: quote.room.capacity,
-    date: draftDate ?? slot.date,
-    startTime: draftStart ?? slot.startTime,
+    date: finalDate,
+    startTime: finalStart,
     durationMinutes: draftDuration ?? action.durationMinutes,
     base,
     discount,
@@ -444,7 +566,7 @@ async function handleCreateDraft(deps: ChatDeps, action: AssistantAction): Promi
 
   return {
     reply:
-      `He dejado preparada la reserva #${draftId}: ${roomName ?? 'sala'} el ${slot.date} a las ${slot.startTime}. ` +
+      `He dejado preparada la reserva #${draftId}: ${roomName ?? 'sala'} el ${finalDate} a las ${finalStart}. ` +
       'Entra en "Reservar" y confírmala con el botón: yo no puedo confirmar por ti.',
     card,
   };
@@ -508,8 +630,12 @@ export async function sendMessage(
 
   // 1) historial para el modelo (sin el mensaje actual: se añade abajo en turno)
   const { rows: previous } = await deps.pool.query<{ role: string; content: string }>(
-    `SELECT role, content FROM chat_messages
-      WHERE session_id = $1 ORDER BY id DESC LIMIT $2`,
+    `SELECT m.role, m.content
+       FROM chat_messages m
+       JOIN chat_sessions s ON s.id = m.session_id
+      WHERE m.session_id = $1
+        AND m.created_at > COALESCE(s.cleared_at, '-infinity'::timestamptz)
+      ORDER BY m.id DESC LIMIT $2`,
     [sessionId, HISTORY_LIMIT],
   );
   const previousTurns: ChatTurn[] = previous
@@ -563,8 +689,22 @@ export async function sendMessage(
     return history(deps.pool, sessionId);
   }
 
-  // 6) despacho con datos reales
-  const outcome = await dispatch(deps, parsed.action);
+  // 6) despacho con datos reales. Si el modelo inventó una sala (o se
+  //    desactivó entre turnos), se responde sin romper la conversación.
+  let outcome: HandlerOutcome;
+  try {
+    outcome = await dispatch(deps, parsed.action);
+  } catch (error) {
+    if (error instanceof UnknownRoomError) {
+      outcome = {
+        reply:
+          'Esa sala ya no está disponible. Dime para cuántas personas y qué día es, y te propongo otra.',
+        card: null,
+      };
+    } else {
+      throw error;
+    }
+  }
 
   // 7) persistir con el consumo real y devolver la conversación completa
   await appendMessage(

@@ -8,7 +8,8 @@ import { z } from 'zod';
  * aunque el modelo lo pidiera. Y como el precio no está en el esquema (regla 1),
  * ningún número del modelo se confía: lo calcula siempre `quote()`.
  *
- * Las fechas NO las decide el modelo: solo clasifica (`dayRef`/`partOfDay`) y el
+ * Las fechas NO las decide el modelo: solo clasifica (`dayRef`/`partOfDay`) y,
+ * si la persona dio una hora exacta, la transcribe en `startTime`; el
  * `dateResolver` convierte esa clasificación en fecha/hora concreta en código.
  */
 
@@ -34,12 +35,28 @@ export const PART_START_TIME: Record<(typeof PARTS_OF_DAY)[number], string> = {
   any: '10:00',
 };
 
+/** Hora exacta 'HH:MM' (24 h) que la persona dijo o confirmó. */
+export const START_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 /** Campos comunes a las acciones que necesitan un hueco de sala. */
 const SlotFields = {
   roomId: z.number().int('roomId debe ser un entero').positive(),
   dayRef: z.enum(DAY_REFS),
   partOfDay: z.enum(PARTS_OF_DAY),
   durationMinutes: z.number().int('durationMinutes debe ser entero'),
+  /**
+   * Opcional a propósito: los `action_json` antiguos no lo tienen y deben
+   * seguir parseándose. Para un `create_draft` NUEVO el servicio exige que la
+   * hora esté confirmada (si falta, propone y pregunta antes de crear nada).
+   */
+  startTime: z.string().regex(START_TIME_PATTERN, 'startTime debe ser HH:MM').optional(),
+  /** Personas que usarán la sala, si la persona lo dijo (para validar capacidad). */
+  people: z
+    .number()
+    .int('people debe ser entero')
+    .positive('people debe ser positivo')
+    .max(1000)
+    .optional(),
 };
 
 export const SERVICE_CODES = ['projector', 'coffee'] as const;

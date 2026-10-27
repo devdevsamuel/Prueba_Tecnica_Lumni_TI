@@ -60,6 +60,30 @@ test('"hoy" SÍ es literal: si la hora ya pasó se devuelve tal cual y el cotiza
   );
 });
 
+test('si la persona dio una hora exacta, manda sobre la franja', () => {
+  const slot = resolveSlot({
+    dayRef: 'saturday',
+    partOfDay: 'morning',
+    startTime: '15:00',
+    now: TUESDAY_08,
+  });
+  assert.deepEqual(slot, { date: '2026-11-14', startTime: '15:00' });
+});
+
+test('el rollover de "hoy/este día" también usa la hora exacta', () => {
+  // Sábado a las 16:00: las 15:00 de hoy ya pasaron → sábado siguiente.
+  const lateSaturday = bogotaWallToUtc('2026-11-14', 16 * 60);
+  assert.deepEqual(
+    resolveSlot({
+      dayRef: 'saturday',
+      partOfDay: 'morning',
+      startTime: '15:00',
+      now: lateSaturday,
+    }),
+    { date: '2026-11-21', startTime: '15:00' },
+  );
+});
+
 test('los domingos también se resuelven (el cotizador es quien dirá que está cerrado)', () => {
   const slot = resolveSlot({ dayRef: 'sunday', partOfDay: 'any', now: TUESDAY_08 });
   assert.deepEqual(slot, { date: '2026-11-15', startTime: '10:00' });

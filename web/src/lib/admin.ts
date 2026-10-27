@@ -54,7 +54,7 @@ export function adminCancelBooking(id: number, reason: string): Promise<Booking>
 
 // ── Bandeja de correos (Parte 2.1) ──────────────────────────────────────────
 
-export const EMAIL_STATUSES = ['pending', 'sending', 'sent', 'failed'] as const;
+export const EMAIL_STATUSES = ['pending', 'sending', 'sent', 'failed', 'skipped'] as const;
 
 export type EmailStatus = (typeof EMAIL_STATUSES)[number];
 

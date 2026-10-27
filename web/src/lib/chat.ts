@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './api';
+import { apiDelete, apiGet, apiPost } from './api';
 
 /**
  * Cliente del chat (Parte 2.2). Único punto de red de la pantalla (docs/03 §7 S).
@@ -46,4 +46,8 @@ export function fetchChat(signal?: AbortSignal): Promise<{ messages: ChatMessage
 
 export function sendChat(content: string, signal?: AbortSignal): Promise<{ messages: ChatMessage[] }> {
   return apiPost<{ messages: ChatMessage[] }>('/api/chat', { content }, signal);
+}
+
+export function clearChat(signal?: AbortSignal): Promise<{ messages: ChatMessage[] }> {
+  return apiDelete<{ messages: ChatMessage[] }>('/api/chat', signal);
 }

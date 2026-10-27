@@ -21,6 +21,10 @@
   `tokens.css` desde la Fase 0.
 - **Modal de cancelación:** trampa de foco, **Esc** cierra y **devuelve el foco** al botón que lo
   abrió. Foco inicial en el primer campo (motivo).
+- **Resultado del cotizador:** al pulsar "Cotizar" (disponible o no), el foco se mueve al
+  resultado con `tabIndex={-1}` y la vista lo centra → nadie tiene que hacer scroll; el anillo
+  de foco se pinta **siempre** (no solo con `:focus-visible`, porque lo mueve el código) y, con
+  `prefers-reduced-motion`, el resaltado del margen se desactiva y el salto es instantáneo.
 - Opcional barato: enlace "saltar al contenido" en el layout.
 
 ## 3. Formularios (el corazón de la app)
@@ -61,6 +65,9 @@ Sin esto, quien use lector de pantalla no se entera de que la cotización cambi�
 
 - `<html lang="es">`; usable a **320 px** de ancho y con texto ampliado al 200 % sin recortes
   (evitar alturas fijas en contenedores con texto).
+- **Movimiento:** solo transiciones de estado (150–200 ms, `docs/06` §1). Con
+  `prefers-reduced-motion: reduce` se desactivan los fades, el colapso de altura y el shimmer;
+  los spinners de carga se conservan (información funcional) a velocidad reducida.
 
 ## 8. Tareas por fase (enlazado con `04-plan-por-fases.md`)
 
@@ -85,6 +92,8 @@ Sin esto, quien use lector de pantalla no se entera de que la cotización cambi�
    objetivo ≥ 95 en las 3 pantallas principales.
 3. **Inspector de accesibilidad** del navegador: revisar árbol, roles y nombres accesibles.
 4. **Pase rápido con VoiceOver** (macOS): cotización anunciada, errores anunciados, modal leído.
+5. **Movimiento reducido:** activar `prefers-reduced-motion` en DevTools y comprobar que la UI
+   sigue siendo comprensible y que los cambios de contenido no dependen de una animación.
 
 **Fuera de alcance (y por qué lo digo en el README):** tests automatizados de a11y con
 `axe-core`/`jest-axe` (dependencias de test que el examen no pide), auditoría de lector de

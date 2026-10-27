@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
@@ -22,6 +22,20 @@ export function Modal({ title, open, onClose, children, footer }: ModalProps) {
   const openerRef = useRef<HTMLElement | null>(null);
   const titleId = useId();
 
+  /**
+   * `onClose` puede cambiar en cada render (por ejemplo, al pasar un inline
+   * al modal). Guardamos la última versión en una ref para que el listener de
+   * teclado no se reinicie ni capture el foco al escribir en los campos.
+   */
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  const handleClose = useCallback((): void => {
+    onCloseRef.current();
+  }, []);
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -38,7 +52,7 @@ export function Modal({ title, open, onClose, children, footer }: ModalProps) {
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        handleClose();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -73,7 +87,7 @@ export function Modal({ title, open, onClose, children, footer }: ModalProps) {
       document.body.style.overflow = previousOverflow;
       openerRef.current?.focus();
     };
-  }, [open, onClose]);
+  }, [open, handleClose]);
 
   if (!open) return null;
 
@@ -81,7 +95,7 @@ export function Modal({ title, open, onClose, children, footer }: ModalProps) {
     <div
       className="modal-backdrop"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) handleClose();
       }}
     >
       <div
@@ -96,7 +110,7 @@ export function Modal({ title, open, onClose, children, footer }: ModalProps) {
           <h2 className="modal__title" id={titleId}>
             {title}
           </h2>
-          <button type="button" className="modal__close" onClick={onClose} aria-label="Cerrar diálogo">
+          <button type="button" className="modal__close" onClick={handleClose} aria-label="Cerrar diálogo">
             <span aria-hidden="true">✕</span>
           </button>
         </div>

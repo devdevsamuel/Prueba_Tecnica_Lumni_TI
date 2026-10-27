@@ -1,11 +1,11 @@
 # AGENTS.md — instrucciones del proyecto
 
 Reserva de salas de coworking: TypeScript estricto, React + Vite, Express, PostgreSQL.
-**Estado: ~90 % — fases 0, 1, 2, 3, 7, 6, 4, 5 y 5b implementadas** (Parte 1 completa, incidente,
-consultas SQL, correo en segundo plano, chat con IA y control de uso/trazabilidad de tokens).
-Pendiente: 8 — cierre. Este archivo
-solo contiene reglas de trabajo; los requisitos, la arquitectura y los pasos ya están documentados
-abajo, no se repiten aquí.
+**Estado: 100 % — fases 0, 1, 2, 3, 7, 6, 4, 5, 5b y 8 implementadas** (Parte 1 completa,
+incidente, consultas SQL, correo en segundo plano, chat con IA, control de uso/trazabilidad de
+tokens y cierre con README, pulido y guion de sustentación). No queda ningún entregable
+obligatorio abierto. Este archivo solo contiene reglas de trabajo; los requisitos, la arquitectura
+y los pasos ya están documentados abajo, no se repiten aquí.
 
 ## De dónde sale cada requisito
 
@@ -17,6 +17,7 @@ abajo, no se repiten aquí.
 | Qué hacer ahora: fases, orden de ejecución y criterios de "hecho" | [`docs/04-plan-por-fases.md`](docs/04-plan-por-fases.md) |
 | Accesibilidad WCAG 2.1 AA | [`docs/05-accesibilidad.md`](docs/05-accesibilidad.md) |
 | UI/UX: tokens, componentes, contrato de estados | [`docs/06-ui-ux-limpia.md`](docs/06-ui-ux-limpia.md) |
+| Guion de la sustentación de 45 min y demo limpia | [`docs/07-sustentacion.md`](docs/07-sustentacion.md) |
 | Mapa del análisis, checklist de auditoría y veredictos | [`docs/00-indice.md`](docs/00-indice.md) |
 | Pendientes abiertos y recomendaciones | [`docs/AUDITORIA-adversarial.md`](docs/AUDITORIA-adversarial.md) |
 
@@ -32,7 +33,7 @@ resumido en `docs/01`).
 3. **Validar antes de dar una tarea por hecha:** `npm run typecheck` · `npm run test` ·
    `npm run migrate` desde cero (y `npm run dev` cuando toque verificar UI).
 4. **Mínimo de dependencias** (`02` §1–3): no se añade ninguna sin justificarla en `02`.
-5. **Seguir el plan por fases:** respetar el orden `0→1→2→3→7→6→4→5→8` y el criterio de "hecho"
+5. **Seguir el plan por fases:** respetar el orden `0→1→2→3→7→6→4→5→5b→8` y el criterio de "hecho"
    de cada fase en `04`; no adelantar funcionalidad de fases posteriores.
 6. **TypeScript estricto** (`strict`, `noUncheckedIndexedAccess`), sin `any` evitables.
 7. **Commits pequeños y descriptivos**, solo cuando el usuario lo pida. Si un cambio afecta a
@@ -48,7 +49,11 @@ resumido en `docs/01`).
   brew services start postgresql@16
   ```
 
-  El instalador aporta también `psql`, que necesita `npm run seed` (`02` §5).
+  El instalador aporta también `psql`, que necesitan `npm run seed` y `npm run db:roles` (`02` §5).
 - Copia `.env.example` a `.env` y completa `DATABASE_URL`, `PORT`, `SESSION_SECRET`
   (`openssl rand -hex 32`), `TZ=America/Bogota` y las claves de IA (`02` §6). El `.env` nunca se
   versiona.
+- **Rol de menor privilegio (opcional, recomendado):** `npm run db:roles` crea el rol
+  `coworking_app` (solo DML, sin DDL) y `DATABASE_URL` apunta a él; `MIGRATOR_DATABASE_URL` queda
+  para las migraciones y el seed, que sí necesitan DDL (`03` §12). Sin esas dos variables, todo
+  sigue funcionando igual con el usuario dueño.

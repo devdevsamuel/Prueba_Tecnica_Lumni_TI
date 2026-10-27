@@ -135,6 +135,7 @@ interface UsageResponse {
   readonly items: readonly UsageItem[];
   readonly page: number;
   readonly total: number;
+  readonly totalPages: number;
 }
 
 before(async () => {
@@ -329,6 +330,16 @@ test('ADMIN: la trazabilidad devuelve totales y el turno con su consumo', async 
   assert.equal(assistant.reasoningTokens, 10);
   assert.equal(assistant.model, 'fake-model');
   assert.equal(mine.find((item) => item.role === 'user')?.model, null);
+
+  // Página fuera de rango: el total sigue siendo el global (no 0).
+  const outOfRange = await fetch(`${baseUrl}/api/admin/chat/usage?page=999&pageSize=100`, {
+    headers: { Cookie: admin },
+  });
+  assert.equal(outOfRange.status, 200);
+  const outData = (await outOfRange.json()) as UsageResponse;
+  assert.equal(outData.total, data.total);
+  assert.equal(outData.items.length, 0);
+  assert.equal(outData.totalPages, Math.ceil(data.total / 100));
 });
 
 test('ADMIN: paginación y sesión inválidas → 400', async () => {

@@ -36,6 +36,8 @@ export interface SessionState {
   readonly loading: boolean;
   readonly error: string | null;
   readonly reload: () => void;
+  /** Aplica la sesión que ya devolvió el login, sin volver a pedir `/me`. */
+  readonly applyUser: (user: SessionUser) => void;
 }
 
 /** Carga la sesión al montar y la recarga tras login/logout. */
@@ -65,7 +67,13 @@ export function useSession(): SessionState {
     };
   }, []);
 
+  const applyUser = useCallback((next: SessionUser) => {
+    setUser(next);
+    setError(null);
+    setLoading(false);
+  }, []);
+
   useEffect(() => reload(), [reload]);
 
-  return { user, loading, error, reload };
+  return { user, loading, error, reload, applyUser };
 }

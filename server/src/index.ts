@@ -2,6 +2,7 @@ import { createApp } from './app.js';
 import { loadConfig } from './config.js';
 import { systemClock } from './core/clock.js';
 import { createPool } from './db/pool.js';
+import { startReminderScheduler } from './modules/email/reminderScheduler.js';
 import { DbEmailSender } from './modules/email/sender.js';
 import { startWorker } from './modules/email/worker.js';
 
@@ -20,7 +21,35 @@ app.listen(config.port, () => {
 const stopWorker = startWorker({ pool, sender: new DbEmailSender(), clock: systemClock });
 console.log('Email worker: activo (captura local cada 5 s).');
 
+// Recordatorios (extensión posterior): el scheduler analiza la BD y encola en
+// el mismo outbox; el worker de arriba es quien envía. Si está desactivado,
+// la cola de confirmaciones sigue funcionando igual.
+const stopReminders = config.reminders.enabled
+  ? startReminderScheduler(
+      {
+        pool,
+        clock: systemClock,
+        leadHours: config.reminders.leadHours,
+        catchupHours: config.reminders.catchupHours,
+      },
+      config.reminders.scanIntervalMs,
+    )
+  : () => undefined;
+if (config.reminders.enabled) {
+  console.log(
+    `Recordatorios: activo (cada ${config.reminders.scanIntervalMs / 1_000} s, ` +
+      `${config.reminders.leadHours} h antes).`,
+  );
+}
+
 process.on('SIGTERM', () => {
   stopWorker();
+  stopReminders();
+  void pool.end().then(() => process.exit(0));
+});
+
+process.on('SIGINT', () => {
+  stopWorker();
+  stopReminders();
   void pool.end().then(() => process.exit(0));
 });

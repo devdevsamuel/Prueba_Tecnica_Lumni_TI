@@ -1,8 +1,10 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
+import type { LoginLimits } from '../../config.js';
 import { sendError } from '../../core/http.js';
 import { verifyPassword } from './password.js';
+import { clearLoginFailures, isLoginLimited, loginAttemptKeys, recordLoginFailure } from './loginLimiter.js';
 import {
   clearedCookie,
   createSession,
@@ -16,11 +18,15 @@ import {
  * Rutas de sesión (Fase 3): login con `scrypt`, `me` y `logout`.
  * Misma respuesta y mismo mensaje para "usuario inexistente" y "contraseña
  * incorrecta" → no se puede enumerar cuentas.
+ *
+ * Extensión posterior: además del hash, el login tiene un límite de intentos
+ * por correo/IP contra fuerza bruta (docs/03 §10).
  */
 export interface AuthDeps {
   readonly pool: Pool;
   readonly secret: string;
   readonly isProduction: boolean;
+  readonly login: LoginLimits;
 }
 
 const LoginSchema = z.object({
@@ -49,50 +55,69 @@ const TIMING_DECOY_HASH =
   'scrypt$16384$8$1$IizACVGtvOwH8iaQIVF8dA==$' +
   '+JAwminefHJa9W5xo4Jb1i/yAAUAWw8oYqzYiS+6IdPou112/FUlG16jJY2UinVBtTvlMkPbKbVhhHCeQkHAKg==';
 
+async function handleLogin(deps: AuthDeps, req: Request, res: Response): Promise<void> {
+  const parsed = LoginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    sendError(
+      res,
+      400,
+      'validation_error',
+      'Datos de acceso inválidos.',
+      parsed.error.issues.map((issue) => ({
+        field: issue.path.join('.') || '(cuerpo)',
+        message: issue.message,
+      })),
+    );
+    return;
+  }
+
+  const { email, password } = parsed.data;
+  const keys = loginAttemptKeys(email, req.ip);
+
+  // Se comprueba antes de consultar el usuario: un ataque de fuerza bruta no
+  // debe llegar ni siquiera a hacer el trabajo de scrypt.
+  if (await isLoginLimited(deps.pool, keys, deps.login)) {
+    res.setHeader('Retry-After', String(deps.login.windowMinutes * 60));
+    sendError(
+      res,
+      429,
+      'too_many_attempts',
+      'Demasiados intentos de acceso. Espera unos minutos e inténtalo de nuevo.',
+    );
+    return;
+  }
+
+  const result = await deps.pool.query<UserRow>(
+    'SELECT id, email, full_name, password_hash, role FROM users WHERE lower(email) = lower($1)',
+    [email],
+  );
+  const user = result.rows[0];
+  let valid = false;
+  if (user) {
+    valid = await verifyPassword(password, user.password_hash);
+  } else {
+    // Misma carga de scrypt que con un usuario real → timing uniforme.
+    await verifyPassword(password, TIMING_DECOY_HASH);
+  }
+  if (!user || !valid) {
+    await recordLoginFailure(deps.pool, keys);
+    sendError(res, 401, 'invalid_credentials', 'Correo o contraseña incorrectos.');
+    return;
+  }
+
+  await clearLoginFailures(deps.pool, keys);
+  const { cookie } = await createSession(deps.pool, deps.secret, user.id);
+  res.setHeader('Set-Cookie', sessionCookie(cookie, deps.isProduction));
+  res.json({
+    user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role },
+  });
+}
+
 export function authRouter(deps: AuthDeps): Router {
   const router = Router();
 
   router.post('/login', (req: Request, res: Response, next: NextFunction) => {
-    const parsed = LoginSchema.safeParse(req.body);
-    if (!parsed.success) {
-      sendError(
-        res,
-        400,
-        'validation_error',
-        'Datos de acceso inválidos.',
-        parsed.error.issues.map((issue) => ({
-          field: issue.path.join('.') || '(cuerpo)',
-          message: issue.message,
-        })),
-      );
-      return;
-    }
-
-    const { email, password } = parsed.data;
-    deps.pool
-      .query<UserRow>('SELECT id, email, full_name, password_hash, role FROM users WHERE lower(email) = lower($1)', [
-        email,
-      ])
-      .then(async (result) => {
-        const user = result.rows[0];
-        let valid = false;
-        if (user) {
-          valid = await verifyPassword(password, user.password_hash);
-        } else {
-          // Misma carga de scrypt que con un usuario real → timing uniforme.
-          await verifyPassword(password, TIMING_DECOY_HASH);
-        }
-        if (!user || !valid) {
-          sendError(res, 401, 'invalid_credentials', 'Correo o contraseña incorrectos.');
-          return;
-        }
-        const { cookie } = await createSession(deps.pool, deps.secret, user.id);
-        res.setHeader('Set-Cookie', sessionCookie(cookie, deps.isProduction));
-        res.json({
-          user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role },
-        });
-      })
-      .catch(next);
+    void handleLogin(deps, req, res).catch(next);
   });
 
   router.get('/me', (req: Request, res: Response) => {

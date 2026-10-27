@@ -3,8 +3,10 @@ import { PART_START_TIME, type DAY_REFS, type PARTS_OF_DAY } from './schema.js';
 
 /**
  * Fechas relativas resueltas EN CÓDIGO (docs/01 §9): el modelo solo clasifica
- * (`dayRef` + `partOfDay`) y aquí se convierte en fecha y hora concretas con el
- * calendario y la zona de Bogotá. **El modelo nunca decide la fecha.**
+ * (`dayRef` + `partOfDay`, y una hora exacta si la persona la dijo) y aquí se
+ * convierte en fecha y hora concretas con el calendario y la zona de Bogotá.
+ * **El modelo nunca decide la fecha.** La hora solo se usa literal cuando el
+ * usuario la dio (`startTime`); si no, se aplica el default de la franja.
  */
 export type DayRef = (typeof DAY_REFS)[number];
 export type PartOfDay = (typeof PARTS_OF_DAY)[number];
@@ -44,13 +46,15 @@ function targetWeekday(dayRef: DayRef, todayWeekday: number): number {
 export function resolveSlot(input: {
   readonly dayRef: DayRef;
   readonly partOfDay: PartOfDay;
+  /** Hora exacta dicha o confirmada por la persona ('HH:MM'); si falta, default de la franja. */
+  readonly startTime?: string;
   readonly now: Date;
 }): ResolvedSlot {
   const today = bogotaDateStr(input.now);
   const todayWeekday = weekdayOf(today);
   if (todayWeekday === null) throw new Error(`Fecha de hoy inválida: ${today}`);
 
-  const startTime = PART_START_TIME[input.partOfDay];
+  const startTime = input.startTime ?? PART_START_TIME[input.partOfDay];
   const target = targetWeekday(input.dayRef, todayWeekday);
   let daysAhead = (target - todayWeekday + 7) % 7;
 

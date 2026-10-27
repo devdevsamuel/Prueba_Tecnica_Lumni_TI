@@ -72,7 +72,10 @@ export async function migrate(pool: Pool, dir: string = MIGRATIONS_DIR): Promise
 /** Punto de entrada: `node server/dist/db/migrate.js` (o vía tsx en desarrollo). */
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
-  const pool = createPool(config.databaseUrl);
+  // Conexión con DDL: el rol de la aplicación (`coworking_app`) NO puede
+  // crear tablas ni índices, así que las migraciones usan la conexión del
+  // migrador (`MIGRATOR_DATABASE_URL`, o `DATABASE_URL` si no se definió).
+  const pool = createPool(config.migratorDatabaseUrl);
   try {
     await migrate(pool);
   } finally {

@@ -27,7 +27,10 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps): express.Express {
   const app = express();
-  app.use(express.json());
+  // Límite defensivo: el chat ya limita a 2.000 caracteres y el login a 254,
+  // pero ningún endpoint necesita cuerpos de más de unos KB. Evita payloads
+  // gigantes antes de llegar a zod.
+  app.use(express.json({ limit: '10kb' }));
 
   // Sesión: adjunta `req.auth` si la cookie es válida (solo consulta si hay cookie).
   app.use(attachSession(deps.pool, deps.config.sessionSecret));
@@ -43,6 +46,7 @@ export function createApp(deps: AppDeps): express.Express {
       pool: deps.pool,
       secret: deps.config.sessionSecret,
       isProduction: deps.config.isProduction,
+      login: deps.config.login,
     }),
   );
 

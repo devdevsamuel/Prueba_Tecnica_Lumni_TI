@@ -64,6 +64,23 @@ export async function processOne(deps: WorkerDeps): Promise<boolean> {
     return true;
   }
 
+  // Un recordatorio puede quedar obsoleto entre que se encola y le toca el
+  // turno: si la reserva se canceló o ya empezó, no se envía. La fila queda
+  // 'skipped' (auditoría) y no se reintenta; las demás filas de la cola siguen.
+  if (
+    message.kind === outbox.REMINDER_KIND &&
+    (message.bookingStatus !== 'confirmed' ||
+      !message.startsAt ||
+      message.startsAt.getTime() <= deps.clock.now().getTime())
+  ) {
+    await outbox.markSkipped(
+      deps.pool,
+      picked.id,
+      'Recordatorio omitido: la reserva se canceló o ya comenzó.',
+    );
+    return true;
+  }
+
   const result = await deps.sender.send(message);
   if (result.ok) {
     await outbox.markSent(deps.pool, picked.id, deps.clock.now());

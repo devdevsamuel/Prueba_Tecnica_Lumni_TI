@@ -14,6 +14,7 @@
     "dev": "sh scripts/dev.sh",
     "build": "npm run build -w server && npm run build -w web",
     "migrate": "npm run build -w server && node --env-file-if-exists=.env server/dist/db/migrate.js",
+    "db:roles": "sh scripts/roles.sh",
     "seed": "sh scripts/seed.sh",
     "test": "npm run test -w server",
     "typecheck": "tsc --noEmit -p server/tsconfig.test.json && tsc --noEmit -p web"

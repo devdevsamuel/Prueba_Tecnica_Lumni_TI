@@ -257,6 +257,49 @@ test('concurrencia: dos confirmaciones en paralelo → 1×201 + 1×409', async (
   assert.equal(failure.error.details?.suggestedSlot?.startTime, '19:00');
 });
 
+test('una reserva confirmada ya no expone sugerencias de disponibilidad', async () => {
+  const draft = ok(await post('/api/bookings', { customerName: 'S', customerEmail: 's@ejemplo.com' }));
+  ok(
+    await post('/api/bookings', {
+      id: draft.id,
+      roomId,
+      date: DATE,
+      startTime: '15:00',
+      durationMinutes: 60,
+    }),
+  );
+
+  const confirmed = await post(`/api/bookings/${draft.id}/confirm`, {});
+  assert.equal(confirmed.status, 201);
+  assert.equal(
+    ok(confirmed).availability,
+    null,
+    'una reserva confirmada ya no debe ofrecer una sugerencia de horario inválida',
+  );
+
+  const restored = await get(`/api/bookings/${draft.id}`);
+  assert.equal(ok(restored).availability, null, 'tampoco al retomar una reserva confirmada');
+});
+
+test('una reserva cancelada vuelve a ofrecer un horario alternativo', async () => {
+  const draft = ok(await post('/api/bookings', { customerName: 'X', customerEmail: 'x@ejemplo.com' }));
+  ok(
+    await post('/api/bookings', {
+      id: draft.id,
+      roomId,
+      date: DATE,
+      startTime: '17:00',
+      durationMinutes: 60,
+    }),
+  );
+
+  const cancelled = await post(`/api/bookings/${draft.id}/cancel`, { reason: 'Cambios de planes' });
+  assert.equal(cancelled.status, 200);
+  const view = ok(cancelled);
+  assert.equal(view.status, 'cancelled');
+  assert.equal(view.availability?.canBook, true, 'al cancelar, el turno queda libre de nuevo');
+});
+
 test('cancelar exige motivo y se valida la transición', async () => {
   const draft = ok(await post('/api/bookings', { customerName: 'F', customerEmail: 'f@ejemplo.com' }));
 

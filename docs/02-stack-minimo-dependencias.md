@@ -17,7 +17,7 @@
 | Migraciones versionadas | Archivos `.sql` numerados + runner propio (~50 líneas con `fs` + `pg`) | 0 | Cumple "migraciones versionadas" sin ORM. Tabla `schema_migrations` con hash/nombre único. |
 | Pruebas | **`node --test`** (runner integrado) | 0 | Sin Jest/Vitest/Mocha. TS: se compila con `tsc` y se testea el output, o se usa `tsx` como única dev-dependencia de ejecución. |
 | Autenticación y sesiones | Cookie firmada **HMAC** + hash de contraseña **scrypt** con `node:crypto` | 0 | Sin Passport, sin jsonwebtoken, sin bcrypt. Dos usuarios sembrados no justifican esa superficie. |
-| Procesos asíncronos / cola | **Outbox en PostgreSQL** + worker con `setInterval` y `SELECT … FOR UPDATE SKIP LOCKED` | 0 | Sin Redis/BullMQ/Agenda. Persiste entre reinicios, es observable en BD y demuestra el patrón real. |
+| Procesos asíncronos / cola | **Outbox en PostgreSQL** + worker con `setInterval` y `SELECT … FOR UPDATE SKIP LOCKED`; un scheduler aparte **solo encola** recordatorios en esa misma cola | 0 | Sin Redis/BullMQ/Agenda/Sidekiq (Sidekiq es de Ruby). Persiste entre reinicios, es observable en BD y demuestra el patrón real; el recordatorio no necesita una segunda cola. |
 | Envío de correos (captura local) | Interfaz `EmailSender` con implementación local que **persiste el correo en la BD** (visible en el admin) | 0 (sin nodemailer) | Intercambiable por SES/Resend/SMTP cambiando **un archivo** (open/closed). |
 | Fechas, horas y zona horaria | API **`Intl`** + cálculo propio, timezone explícita `America/Bogota` | 0 | Sin dayjs/date-fns/moment. |
 | Llamada a la IA | **`fetch` nativo** a la API de OpenCode Go (OpenAI-compatible) | 0 (sin SDK de IA) | Clave y endpoint en `.env`; verificado con llamada real (HTTP 200). Ver archivo 03, sección 6. |
@@ -44,9 +44,10 @@ tsx            # (opcional) ejecutar TS en dev/test sin compilación previa
 
 **Explícitamente fuera (y por qué — va en el README):**
 Prisma/TypeORM/Knex (ORM/query builders), Jest/Vitest (usamos `node:test`), Passport/jsonwebtoken/bcrypt
-(auth manual con `crypto`), BullMQ/Redis/Agenda (outbox en Postgres), nodemailer (captura local en BD),
-dayjs/date-fns (`Intl`), axios (fetch), Redux/Zustand/TanStack (estado local de React), Tailwind/MUI/
-Bootstrap (CSS plano), supertest (fetch contra servidor real en efímero), Swagger (README).
+(auth manual con `crypto`), BullMQ/Redis/Agenda/Sidekiq (outbox en Postgres; Sidekiq además es de Ruby),
+nodemailer (captura local en BD), dayjs/date-fns (`Intl`), axios (fetch), Redux/Zustand/TanStack (estado
+local de React), Tailwind/MUI/Bootstrap (CSS plano), supertest (fetch contra servidor real en efímero),
+Swagger (README).
 
 ## 4. Estructura del repositorio
 
@@ -55,11 +56,14 @@ Bootstrap (CSS plano), supertest (fetch contra servidor real en efímero), Swagg
 ├── README.md                 # cómo correr, decisiones, alcance, Uso de IA, ambigüedades
 ├── INCIDENTE.md              # Parte 4 (máx. 2 páginas)
 ├── consultas.sql             # Parte 3 (5 consultas comentadas)
+├── docs/
+│   └── incidente-evidencia.sql # anexo SQL del incidente (14 consultas, 4 bloques)
 ├── AGENTS.md                 # instrucciones del proyecto para la asistente de IA
 ├── package.json              # npm workspaces: server + web
-├── .env.example              # DATABASE_URL, AI_BASE_URL, AI_API_KEY, AI_MODEL, SESSION_SECRET, TZ
+├── .env.example              # DATABASE_URL, AI_*, SESSION_SECRET, TZ + recordatorios/login
 ├── db/
 │   ├── migrations/0001_init.sql, 0002_....sql
+│   ├── roles.sql             # rol de menor privilegio `coworking_app` (docs/03 §12)
 │   └── seed.sql              # 2 usuarios (cliente/admin) + 3 salas
 ├── server/
 │   ├── src/
@@ -70,9 +74,9 @@ Bootstrap (CSS plano), supertest (fetch contra servidor real en efímero), Swagg
 │   │   ├── modules/
 │   │   │   ├── quotes/       # quote.ts (lógica PURA), service.ts, routes.ts, quote.test.ts
 │   │   │   ├── bookings/     # state.ts (máquina de estados), service.ts, routes.ts, tests
-│   │   │   ├── auth/         # password.ts, session.ts, routes.ts
+│   │   │   ├── auth/         # password.ts, session.ts, loginLimiter.ts, routes.ts
 │   │   │   ├── admin/        # rutas de listado/filtros + bandeja de correos
-│   │   │   ├── email/        # outboxRepo.ts, worker.ts, sender.ts (EmailSender), templates
+│   │   │   ├── email/        # outboxRepo.ts, worker.ts, reminderScheduler.ts, sender.ts, templates
 │   │   │   └── chat/         # prompt.md, schema.ts (zod), dateResolver.ts, aiClient.ts, service.ts
 │   │   └── db/               # pool.ts, migrate.ts (runner)
 │   └── test/                 # tests de integración (fetch contra servidor real)
@@ -97,6 +101,7 @@ otro módulo: pasa por su servicio.
     "dev": "sh scripts/dev.sh",   // 2 procesos en background, sin dependencias de terceros
     "build": "npm run build -w server && npm run build -w web",
     "migrate": "node server/dist/db/migrate.js",
+    "db:roles": "sh scripts/roles.sh",   // rol de menor privilegio para la app
     "seed": "psql $DATABASE_URL -f db/seed.sql",
     "test": "npm run test -w server",
     "typecheck": "tsc --noEmit -p server && tsc --noEmit -p web"
@@ -123,6 +128,10 @@ wait
 
 ```
 DATABASE_URL=postgresql://user:pass@localhost:5432/coworking
+# Conexión con DDL para `npm run migrate` y `npm run seed`. Opcional: si no se
+# define, ambos usan DATABASE_URL. Útil cuando la app va con el rol
+# restringido `coworking_app` (docs/03 §12).
+# MIGRATOR_DATABASE_URL=postgresql://owner@localhost:5432/coworking
 PORT=3000
 SESSION_SECRET=<generar con: openssl rand -hex 32>
 TZ=America/Bogota
@@ -141,6 +150,12 @@ AI_MONTHLY_TOKEN_BUDGET=
 `AI_MAX_TOKENS` sube a 4.000 porque los modelos de razonamiento gastan el tope
 "pensando"; `AI_MAX_PER_SESSION_*` protege la cuota por conversación y
 `AI_MONTHLY_TOKEN_BUDGET` es la red de seguridad global (ver `03` §6.3).
+
+`DATABASE_URL` **debería** apuntar al rol de menor privilegio `coworking_app`
+(lo crea `npm run db:roles`): la aplicación solo necesita DML sobre sus tablas.
+`MIGRATOR_DATABASE_URL` es la conexión con DDL que usan las migraciones y el
+seed. Con una sola variable (el flujo simple) todo funciona igual; con las dos,
+la app deja de poder alterar el esquema (ver `03` §12).
 
 ## 7. Cómo se refleja SOLID en esta estructura
 

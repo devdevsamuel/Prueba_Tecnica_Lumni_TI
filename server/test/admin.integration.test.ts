@@ -118,6 +118,7 @@ before(async () => {
   await pool.query('DELETE FROM bookings WHERE customer_email LIKE $1', [`%${EMAIL_DOMAIN}`]);
   await pool.query(`DELETE FROM bookings WHERE room_id IN (SELECT id FROM rooms WHERE name LIKE 'Sala Admin %')`);
   await pool.query(`DELETE FROM rooms WHERE name LIKE 'Sala Admin %'`);
+  await pool.query('DELETE FROM login_attempts');
 
   const insertedA = await pool.query<{ id: number }>(
     `INSERT INTO rooms (name, size, capacity, hourly_rate) VALUES ($1,'small',4,40000) RETURNING id`,
@@ -152,6 +153,7 @@ after(async () => {
   await pool.query('DELETE FROM bookings WHERE customer_email LIKE $1', [`%${EMAIL_DOMAIN}`]);
   await pool.query(`DELETE FROM bookings WHERE room_id IN (SELECT id FROM rooms WHERE name LIKE 'Sala Admin %')`);
   await pool.query(`DELETE FROM rooms WHERE name LIKE 'Sala Admin %'`);
+  await pool.query('DELETE FROM login_attempts');
   // Los logins de prueba crean sesiones: se retiran para no dejar residuos.
   await pool.query(
     `DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email IN ('admin@coworking.test','cliente@coworking.test'))`,
@@ -257,6 +259,13 @@ test('el listado pagina y filtra por estado y sala', async () => {
   assert.equal(listed(paged).page, 2);
   assert.equal(listed(paged).items.length, 2);
   assert.equal(listed(paged).totalPages, Math.ceil(listed(paged).total / 2));
+
+  // Una página fuera de rango no debe falsear el total (antes daba 0).
+  const outOfRange = await request('/api/admin/bookings?pageSize=2&page=999', {}, cookie);
+  assert.equal(outOfRange.status, 200);
+  assert.equal(listed(outOfRange).total, listed(all).total, 'el total es global, no de la página');
+  assert.equal(listed(outOfRange).items.length, 0);
+  assert.equal(listed(outOfRange).totalPages, Math.ceil(listed(all).total / 2));
 });
 
 test('el detalle devuelve la reserva con sus líneas', async () => {
@@ -321,4 +330,42 @@ test('una cookie manipulada o fabricada se rechaza', async () => {
 
   const malformed = 'sid=sin-firma';
   assert.equal((await request('/api/admin/bookings', {}, malformed)).status, 401);
+});
+
+test('login rechaza un payload de inyección SQL (zod + consulta parametrizada)', async () => {
+  const response = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: "' OR '1'='1' --", password: 'cualquiera' }),
+  });
+  assert.equal(response.status, 400, 'el correo inválido se corta antes de la BD');
+  const body = (await response.json()) as Failure;
+  assert.equal(body.error.code, 'validation_error');
+});
+
+test('login: 5 fallos en la ventana → 429 con Retry-After', async () => {
+  await pool.query('DELETE FROM login_attempts');
+  const email = `bruteforce-${process.pid}@example.com`;
+
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const response = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: `incorrecta-${attempt}` }),
+    });
+    assert.equal(response.status, 401, `el intento ${attempt} debe ser un 401 normal`);
+  }
+
+  const blocked = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'otra-mas' }),
+  });
+  assert.equal(blocked.status, 429);
+  assert.ok(Number(blocked.headers.get('retry-after')) > 0, 'debe indicar cuándo reintentar');
+  const body = (await blocked.json()) as Failure;
+  assert.equal(body.error.code, 'too_many_attempts');
+
+  // No dejar el contador de IP contaminando el resto de la suite.
+  await pool.query('DELETE FROM login_attempts');
 });

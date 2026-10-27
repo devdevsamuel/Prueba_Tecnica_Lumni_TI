@@ -11,7 +11,16 @@ import { z } from 'zod';
  * error de arranque lo dice con claridad (y `.env.example` indica cómo obtenerla).
  */
 const EnvSchema = z.object({
+  // Conexión de la APLICACIÓN: idealmente el rol de menor privilegio
+  // `coworking_app` (ver `db/roles.sql` y `docs/03` §12). En desarrollo puede
+  // ser el mismo usuario dueño, si no se ha creado el rol.
   DATABASE_URL: z.url('DATABASE_URL debe ser una URL de PostgreSQL válida'),
+  // Conexión de las MIGRACIONES: sí necesita DDL (crear tablas, índices,
+  // constraints). Si no se define, cae a `DATABASE_URL` (desarrollo por
+  // defecto). En un entorno con rol dedicado, apunta al usuario dueño.
+  MIGRATOR_DATABASE_URL: z
+    .url('MIGRATOR_DATABASE_URL debe ser una URL de PostgreSQL válida')
+    .optional(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   SESSION_SECRET: z
     .string()
@@ -39,6 +48,45 @@ const EnvSchema = z.object({
     (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     z.coerce.number().int('AI_MONTHLY_TOKEN_BUDGET debe ser un entero').min(1).optional(),
   ),
+  // Recordatorios por correo (extensión posterior, docs/03 §9). El scheduler
+  // solo inserta en el outbox; el worker existente hace el envío.
+  REMINDER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  REMINDER_LEAD_HOURS: z.coerce
+    .number()
+    .int('REMINDER_LEAD_HOURS debe ser un entero')
+    .min(1)
+    .max(720)
+    .default(48),
+  REMINDER_SCAN_INTERVAL_MS: z.coerce
+    .number()
+    .int('REMINDER_SCAN_INTERVAL_MS debe ser un entero')
+    .min(1_000)
+    .max(3_600_000)
+    .default(60_000),
+  REMINDER_CATCHUP_HOURS: z.coerce
+    .number()
+    .int('REMINDER_CATCHUP_HOURS debe ser un entero')
+    .min(0)
+    .max(168)
+    .default(24),
+  // Límite de intentos de login (extensión posterior, docs/03 §10). Es una
+  // ventana móvil por correo y por IP; la inyección SQL se evita con $1, no
+  // con este contador.
+  LOGIN_MAX_ATTEMPTS: z.coerce
+    .number()
+    .int('LOGIN_MAX_ATTEMPTS debe ser un entero')
+    .min(1)
+    .max(100)
+    .default(5),
+  LOGIN_WINDOW_MINUTES: z.coerce
+    .number()
+    .int('LOGIN_WINDOW_MINUTES debe ser un entero')
+    .min(1)
+    .max(1_440)
+    .default(15),
 });
 
 export interface AiLimits {
@@ -55,13 +103,29 @@ export interface AiConfig {
   readonly limits: AiLimits;
 }
 
+export interface ReminderConfig {
+  readonly enabled: boolean;
+  readonly leadHours: number;
+  readonly scanIntervalMs: number;
+  readonly catchupHours: number;
+}
+
+export interface LoginLimits {
+  readonly maxAttempts: number;
+  readonly windowMinutes: number;
+}
+
 export interface Config {
   readonly databaseUrl: string;
+  /** Conexión con DDL para el runner de migraciones (cae a `databaseUrl`). */
+  readonly migratorDatabaseUrl: string;
   readonly port: number;
   readonly sessionSecret: string;
   readonly tz: string;
   readonly isProduction: boolean;
   readonly ai: AiConfig;
+  readonly reminders: ReminderConfig;
+  readonly login: LoginLimits;
 }
 
 export class ConfigError extends Error {
@@ -82,6 +146,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const data = parsed.data;
   return {
     databaseUrl: data.DATABASE_URL,
+    migratorDatabaseUrl: data.MIGRATOR_DATABASE_URL ?? data.DATABASE_URL,
     port: data.PORT,
     sessionSecret: data.SESSION_SECRET,
     tz: data.TZ,
@@ -96,6 +161,16 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
         perDay: data.AI_MAX_PER_SESSION_DAY,
         monthlyTokenBudget: data.AI_MONTHLY_TOKEN_BUDGET,
       },
+    },
+    reminders: {
+      enabled: data.REMINDER_ENABLED,
+      leadHours: data.REMINDER_LEAD_HOURS,
+      scanIntervalMs: data.REMINDER_SCAN_INTERVAL_MS,
+      catchupHours: data.REMINDER_CATCHUP_HOURS,
+    },
+    login: {
+      maxAttempts: data.LOGIN_MAX_ATTEMPTS,
+      windowMinutes: data.LOGIN_WINDOW_MINUTES,
     },
   };
 }

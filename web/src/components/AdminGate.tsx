@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Button } from './Button';
 import { Card } from './Card';
-import { EmptyState, ErrorState, LoadingState } from './states';
+import { Skeleton } from './Skeleton';
+import { EmptyState, ErrorState } from './states';
 import { LoginPage } from '../pages/LoginPage';
 import { logoutRequest, type SessionState } from '../lib/auth';
 
@@ -32,6 +33,8 @@ export function AdminGate({ session, title, intro, children }: AdminGateProps) {
   // su propio `intro` para sobrescribirlo.
   const subtitle = intro ?? (user ? `Sesión de ${user.fullName} · ${user.email}` : undefined);
 
+  // Las pestañas solo existen cuando ya hay un admin dentro: así no aparecen y
+  // desaparecen entre el estado de carga, el login y el panel (evita saltos).
   const header = (extra?: ReactNode): ReactNode => (
     <div className="admin-head">
       <div>
@@ -39,17 +42,19 @@ export function AdminGate({ session, title, intro, children }: AdminGateProps) {
         {subtitle && <p className="page-intro">{subtitle}</p>}
       </div>
       <div className="admin-head__actions">
-        <nav className="admin-tabs" aria-label="Secciones de administración">
-          <ul>
-            {TABS.map((tab) => (
-              <li key={tab.to}>
-                <NavLink to={tab.to} end={tab.end} className="admin-tab">
-                  {tab.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
+        {isAdmin && (
+          <nav className="admin-tabs" aria-label="Secciones de administración">
+            <ul>
+              {TABS.map((tab) => (
+                <li key={tab.to}>
+                  <NavLink to={tab.to} end={tab.end} className="admin-tab">
+                    {tab.label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
         {extra}
       </div>
     </div>
@@ -60,7 +65,7 @@ export function AdminGate({ session, title, intro, children }: AdminGateProps) {
       <div className="stack-lg">
         {header()}
         <Card>
-          <LoadingState label="Comprobando la sesión…" />
+          <Skeleton variant="card" rows={3} label="Comprobando la sesión…" />
         </Card>
       </div>
     );
@@ -84,7 +89,7 @@ export function AdminGate({ session, title, intro, children }: AdminGateProps) {
           <h1>{title}</h1>
           <p className="page-intro">Área reservada al equipo del coworking.</p>
         </div>
-        <LoginPage onLoggedIn={() => session.reload()} />
+        <LoginPage onLoggedIn={(user) => session.applyUser(user)} />
       </div>
     );
   }
@@ -125,7 +130,7 @@ export function AdminGate({ session, title, intro, children }: AdminGateProps) {
           Cerrar sesión
         </Button>,
       )}
-      {children}
+      <div className="fade-in">{children}</div>
     </div>
   );
 }

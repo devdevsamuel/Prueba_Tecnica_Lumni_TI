@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { Collapse } from '../components/Collapse';
 import { Input } from '../components/Input';
 import { ApiError } from '../lib/api';
 import { loginRequest, type SessionUser } from '../lib/auth';
@@ -59,11 +60,13 @@ export function LoginPage({ onLoggedIn }: LoginPageProps) {
         Accede con tu cuenta para ver y gestionar las reservas del coworking.
       </p>
 
-      {error && (
-        <p className="alert" role="alert">
-          {error}
-        </p>
-      )}
+      <Collapse open={Boolean(error)}>
+        {error && (
+          <p className="alert" role="alert">
+            {error}
+          </p>
+        )}
+      </Collapse>
 
       <form onSubmit={handleSubmit} noValidate>
         <Input

@@ -51,3 +51,27 @@ test('loadConfig exige AI_API_KEY desde la Fase 5', () => {
     (error: unknown) => error instanceof ConfigError && /AI_API_KEY/.test(error.message),
   );
 });
+
+test('loadConfig aplica los defaults de recordatorios y login', () => {
+  const config = loadConfig(validEnv);
+  assert.equal(config.reminders.enabled, true);
+  assert.equal(config.reminders.leadHours, 48);
+  assert.equal(config.reminders.scanIntervalMs, 60_000);
+  assert.equal(config.reminders.catchupHours, 24);
+  assert.equal(config.login.maxAttempts, 5);
+  assert.equal(config.login.windowMinutes, 15);
+});
+
+test('loadConfig permite desactivar recordatorios y ajustar el límite de login', () => {
+  const config = loadConfig({
+    ...validEnv,
+    REMINDER_ENABLED: 'false',
+    REMINDER_LEAD_HOURS: '72',
+    LOGIN_MAX_ATTEMPTS: '3',
+    LOGIN_WINDOW_MINUTES: '30',
+  });
+  assert.equal(config.reminders.enabled, false);
+  assert.equal(config.reminders.leadHours, 72);
+  assert.equal(config.login.maxAttempts, 3);
+  assert.equal(config.login.windowMinutes, 30);
+});

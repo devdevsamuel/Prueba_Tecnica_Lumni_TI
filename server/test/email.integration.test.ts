@@ -288,10 +288,20 @@ test('la bandeja del admin muestra el correo con cuerpo y admite filtro', async 
   assert.equal(list.status, 200);
   const listBody = (await list.json()) as {
     total: number;
+    totalPages: number;
     items: { id: number; status: string; recipient: string; subject: string }[];
   };
   assert.ok(listBody.total >= 3, 'hay correos enviados por los tests anteriores');
   assert.ok(listBody.items.every((item) => item.status === 'sent'), 'el filtro funciona');
+
+  // El total de la bandeja tampoco depende de la página pedida.
+  const outOfRange = await fetch(`${baseUrl}/api/admin/emails?status=sent&pageSize=50&page=999`, {
+    headers: { Cookie: cookie },
+  });
+  assert.equal(outOfRange.status, 200);
+  const outOfRangeBody = (await outOfRange.json()) as { total: number; items: unknown[] };
+  assert.equal(outOfRangeBody.total, listBody.total, 'el total no se pierde fuera de rango');
+  assert.equal(outOfRangeBody.items.length, 0);
   // La bandeja es global: conviven correos reales de la BD de desarrollo, así
   // que solo se exige que los de ESTE fichero estén presentes (no únicos).
   const mine = listBody.items.filter((item) => item.recipient.endsWith(EMAIL_DOMAIN));

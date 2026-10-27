@@ -3,7 +3,8 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { AdminGate } from '../components/AdminGate';
 import { Card } from '../components/Card';
 import { isStatusKind, StatusBadge } from '../components/StatusBadge';
-import { ErrorState, LoadingState } from '../components/states';
+import { Skeleton } from '../components/Skeleton';
+import { ErrorState } from '../components/states';
 import { ApiError } from '../lib/api';
 import { fetchEmail, type EmailDetail } from '../lib/admin';
 import { formatBogotaFull } from '../lib/datetime';
@@ -51,7 +52,7 @@ export function AdminEmailDetailPage() {
   if (loading) {
     content = (
       <Card>
-        <LoadingState label="Cargando el correo…" />
+        <Skeleton variant="card" rows={4} label="Cargando el correo…" />
       </Card>
     );
   } else if (error || !email) {
@@ -121,7 +122,9 @@ export function AdminEmailDetailPage() {
 
   return (
     <AdminGate session={session} title={`Correo #${emailId}`} intro="Detalle del mensaje">
-      {content}
+      <div key={loading ? 'loading' : 'ready'} className={loading ? undefined : 'rise-in'}>
+        {content}
+      </div>
     </AdminGate>
   );
 }

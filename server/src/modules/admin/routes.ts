@@ -35,7 +35,7 @@ const CancelBodySchema = z.object({
   reason: z.string({ error: 'El motivo es obligatorio.' }).trim().min(1, 'El motivo es obligatorio.').max(500),
 });
 
-const EMAIL_STATUSES = ['pending', 'sending', 'sent', 'failed'] as const;
+const EMAIL_STATUSES = ['pending', 'sending', 'sent', 'failed', 'skipped'] as const;
 
 const EmailListQuerySchema = z.object({
   status: z.enum(EMAIL_STATUSES).optional(),
@@ -64,7 +64,6 @@ interface ListItemRow {
   readonly cancel_reason: string | null;
   readonly total: string | null;
   readonly created_at: Date;
-  readonly total_rows: number;
 }
 
 /** Errores de zod al formato del contrato `{ error: { details: [{field,…}] } }`. */
@@ -96,21 +95,29 @@ export function adminRouter(deps: AdminDeps): Router {
     const { page, pageSize, status, room } = parsed.data;
     const offset = (page - 1) * pageSize;
 
-    deps.pool
-      .query<ListItemRow>(
-        `SELECT count(*) OVER()::int AS total_rows,
-                b.id, b.customer_name, b.customer_email, b.room_id, r.name AS room_name,
+    // El total se cuenta aparte: `count(*) OVER()` devuelve 0 si la página
+    // pedida queda fuera de rango (el contrato debe dar el total real).
+    const filters = `WHERE ($1::text IS NULL OR b.status = $1)
+                       AND ($2::int IS NULL OR b.room_id = $2)`;
+    Promise.all([
+      deps.pool.query<{ total: number }>(
+        `SELECT count(*)::int AS total FROM bookings b ${filters}`,
+        [status ?? null, room ?? null],
+      ),
+      deps.pool.query<ListItemRow>(
+        `SELECT b.id, b.customer_name, b.customer_email, b.room_id, r.name AS room_name,
                 b.starts_at, b.ends_at, b.status, b.cancel_reason, b.total, b.created_at
            FROM bookings b
            LEFT JOIN rooms r ON r.id = b.room_id
-          WHERE ($1::text IS NULL OR b.status = $1)
-            AND ($2::int IS NULL OR b.room_id = $2)
+           ${filters}
           ORDER BY b.created_at DESC, b.id DESC
           LIMIT $3 OFFSET $4`,
         [status ?? null, room ?? null, pageSize, offset],
-      )
-      .then(({ rows }) => {
-        const total = rows[0]?.total_rows ?? 0;
+      ),
+    ])
+      .then(([totalResult, itemsResult]) => {
+        const total = totalResult.rows[0]?.total ?? 0;
+        const rows = itemsResult.rows;
         res.json({
           items: rows.map((row) => ({
             id: row.id,
@@ -186,7 +193,7 @@ export function adminRouter(deps: AdminDeps): Router {
     readonly id: number;
     readonly booking_id: number;
     readonly kind: string;
-    readonly status: 'pending' | 'sending' | 'sent' | 'failed';
+    readonly status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
     readonly attempts: number;
     readonly next_attempt_at: Date;
     readonly last_error: string | null;
@@ -196,7 +203,6 @@ export function adminRouter(deps: AdminDeps): Router {
     readonly recipient: string;
     readonly customer_name: string;
     readonly room_name: string | null;
-    readonly total_rows?: number;
     readonly body?: string;
   }
 
@@ -233,17 +239,24 @@ export function adminRouter(deps: AdminDeps): Router {
       return;
     }
     const { status, page, pageSize } = parsed.data;
-    deps.pool
-      .query<EmailRow>(
-        `SELECT count(*) OVER()::int AS total_rows, ${EMAIL_COLUMNS}
+    const filters = `WHERE ($1::text IS NULL OR o.status = $1)`;
+    Promise.all([
+      deps.pool.query<{ total: number }>(
+        `SELECT count(*)::int AS total ${EMAIL_FROM} ${filters}`,
+        [status ?? null],
+      ),
+      deps.pool.query<EmailRow>(
+        `SELECT ${EMAIL_COLUMNS}
          ${EMAIL_FROM}
-          WHERE ($1::text IS NULL OR o.status = $1)
+         ${filters}
           ORDER BY o.created_at DESC, o.id DESC
           LIMIT $2 OFFSET $3`,
         [status ?? null, pageSize, (page - 1) * pageSize],
-      )
-      .then(({ rows }) => {
-        const total = rows[0]?.total_rows ?? 0;
+      ),
+    ])
+      .then(([totalResult, itemsResult]) => {
+        const total = totalResult.rows[0]?.total ?? 0;
+        const rows = itemsResult.rows;
         res.json({
           items: rows.map((row) => toEmailView(row)),
           page,
@@ -285,7 +298,6 @@ export function adminRouter(deps: AdminDeps): Router {
   // resto): totales + turno paginado con el consumo de CADA llamada al modelo.
 
   interface UsageRow {
-    readonly total_rows?: number;
     readonly id: number;
     readonly session_id: string;
     readonly role: string;
@@ -338,8 +350,7 @@ export function adminRouter(deps: AdminDeps): Router {
     );
 
     const items = deps.pool.query<UsageRow>(
-      `SELECT count(*) OVER()::int AS total_rows,
-              id, session_id, role, created_at, left(content, 140) AS preview,
+      `SELECT id, session_id, role, created_at, left(content, 140) AS preview,
               prompt_tokens, completion_tokens, reasoning_tokens, cost_usd, model
          FROM chat_messages
         ORDER BY created_at DESC, id DESC
@@ -351,7 +362,9 @@ export function adminRouter(deps: AdminDeps): Router {
       .then(([summaryResult, itemsResult]) => {
         const s = summaryResult.rows[0];
         const rows = itemsResult.rows;
-        const total = rows[0]?.total_rows ?? 0;
+        // `summary.messages` cuenta toda la tabla, no la página: así el total
+        // sigue siendo correcto aunque se pida una página fuera de rango.
+        const total = s?.messages ?? 0;
         res.json({
           summary: {
             messages: s?.messages ?? 0,

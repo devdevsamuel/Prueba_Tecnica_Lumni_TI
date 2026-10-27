@@ -3,12 +3,12 @@
 **Objetivo:** revisar críticamente los documentos de análisis y planificación de la prueba
 `prueba_tecnica_lumni_TI` (`docs/`) aplicando criterios de ingeniería de software.
 
-**Estado (2026-10-25): informe depurado.** Los 13 hallazgos de la auditoría (4.1–4.8 y N1–N5)
-fueron cerrados y aplicados en `docs/` (commits `e7e37a1`, `b264a27`, `9101cb9`) y por eso ya **no
-se reproducen aquí**. Tampoco se conserva ningún hallazgo de inconsistencias temporales: la línea
-temporal fue eliminada del plan y el tiempo dejó de ser variable de planificación. Este documento
-queda como registro vivo de lo que **todavía está abierto**: pendientes y recomendaciones de
-implementación.
+**Estado (2026-10-26): cierre.** Los 13 hallazgos de la auditoría (4.1–4.8 y N1–N5) fueron cerrados
+y aplicados en `docs/` (commits `e7e37a1`, `b264a27`, `9101cb9`) y por eso ya **no se reproducen
+aquí**. Tampoco se conserva ningún hallazgo de inconsistencias temporales: la línea temporal fue
+eliminada del plan y el tiempo dejó de ser variable de planificación. En la Fase 8 se cerraron los
+3 pendientes que quedaban; este documento se conserva como registro de las recomendaciones
+implementadas.
 
 ---
 
@@ -59,13 +59,14 @@ Fecha de la revisión: 2026-10-25.
 
 ## 3. Pendientes abiertos
 
-1. **Peso no especificado del 10 % de la ponderación.** El PDF suma 40 + 25 + 10 + 15 = 90 % y no
-   define el resto. Hipótesis documentada en `01` §14 nº 7 (README + Uso de IA + preparación de la
-   sustentación); **cierre en Fase 8**, al redactar el README.
-2. **Esquema del chat en el README final.** `03` §6.2 es exhaustivo; en el README bastaría un
-   esquema de 6 pasos para no saturar el documento principal (Fase 8).
-3. **Consonancia entre documentos.** Mantener `README.md`, `docs/00`–`06` y este informe coherentes
-   entre sí tras cada cambio (continuo; cierre en Fase 8).
+**Ninguno.** Los 3 pendientes se cerraron en la Fase 8:
+
+1. **Peso no especificado del 10 %.** Cerrado: hipótesis documentada en `01` §14 nº 7 y explicada
+   en el README (ambigüedades) y en `07` (cierre).
+2. **Esquema del chat en el README.** Cerrado: el README incluye el turno en 6 pasos y enlaza a
+   `03` §6.2 para el detalle.
+3. **Consonancia entre documentos.** Cerrado: `README`, `AGENTS.md`, `docs/00–07` y este informe
+   se revisaron juntos en la Fase 8.
 
 ---
 
@@ -81,10 +82,11 @@ Fecha de la revisión: 2026-10-25.
 4. **Fase 5:** usar como test de aceptación la conversación literal del enunciado (*"necesito una
    sala para 6 personas el sábado en la mañana, con proyector"*) y verificar que `rooms.capacity`
    filtra correctamente (`01` §14 nº 9; `04` §6).
-5. **Fase 8:** incluir la sustentación de 45 minutos (guion de demo y dudas frecuentes) en el plan
-   de referencias y en los "próximos pasos" del README; garantizar historial de commits
-   incremental con mensajes descriptivos.
-6. **Documentación:** conservar la consonancia entre `README.md`, `docs/00`–`06` y este informe.
+5. **Fase 8 (cumplido):** la sustentación de 45 minutos está en
+   [`07-sustentacion.md`](07-sustentacion.md), enlazada desde el README; el historial de commits es
+   incremental y con mensajes descriptivos.
+6. **Documentación (cumplido):** `README.md`, `AGENTS.md`, `docs/00–07` y este informe se revisaron
+   juntos en la Fase 8.
 
 ---
 

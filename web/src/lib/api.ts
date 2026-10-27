@@ -54,3 +54,7 @@ export function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> {
 export function apiPost<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   return request<T>(path, { method: 'POST', body: JSON.stringify(body), signal });
 }
+
+export function apiDelete<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, { method: 'DELETE', signal });
+}

@@ -8,12 +8,17 @@ import type { EmailMessage } from './sender.js';
  */
 export type Queryable = Pick<Pool, 'query'>;
 
-export type OutboxStatus = 'pending' | 'sending' | 'sent' | 'failed';
+/** La confirmación y el recordatorio comparten cola, pero no se mezclan. */
+export const REMINDER_KIND = 'reminder_2d' as const;
+
+export type OutboxKind = 'confirmation' | typeof REMINDER_KIND;
+
+export type OutboxStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
 
 export interface OutboxRow {
   readonly id: number;
   readonly booking_id: number;
-  readonly kind: string;
+  readonly kind: OutboxKind;
   readonly status: OutboxStatus;
   readonly attempts: number;
   readonly next_attempt_at: Date;
@@ -48,6 +53,32 @@ export async function insertConfirmation(
 }
 
 /**
+ * Inserta el recordatorio de una reserva confirmada. El scheduler puede correr
+ * cada minuto, varias instancias o después de un reinicio: el UNIQUE
+ * (booking_id, kind) + ON CONFLICT hacen que la operación sea idempotente.
+ *
+ * Devuelve `true` solo cuando realmente creó la fila (útil para logs/tests).
+ */
+export async function insertReminder(
+  db: Queryable,
+  input: {
+    readonly bookingId: number;
+    readonly subject: string;
+    readonly body: string;
+    readonly nextAttemptAt: Date;
+  },
+): Promise<boolean> {
+  const result = await db.query(
+    `INSERT INTO email_outbox (booking_id, kind, status, attempts, next_attempt_at,
+                               rendered_subject, rendered_body)
+     VALUES ($1, $2, 'pending', 0, $3, $4, $5)
+     ON CONFLICT (booking_id, kind) DO NOTHING`,
+    [input.bookingId, REMINDER_KIND, input.nextAttemptAt, input.subject, input.body],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
  * Toma el próximo trabajo vencido con `FOR UPDATE SKIP LOCKED`: varios workers
  * conviven sin pelearse por el mismo job (docs/03 §3).
  */
@@ -75,12 +106,29 @@ export async function pickDue(
   return { id, attempts: updated.rows[0]?.attempts ?? 0 };
 }
 
+/** Mensaje a enviar + datos de la reserva para decidir si sigue vigente. */
+export interface LoadedMessage extends EmailMessage {
+  readonly kind: OutboxKind;
+  readonly bookingStatus: string;
+  readonly startsAt: Date | null;
+}
+
 /** Mensaje a enviar (destinatario desde la reserva asociada). */
-export async function loadMessage(db: Queryable, id: number): Promise<EmailMessage | null> {
-  const { rows } = await db.query<{ email: string; subject: string; body: string }>(
+export async function loadMessage(db: Queryable, id: number): Promise<LoadedMessage | null> {
+  const { rows } = await db.query<{
+    email: string;
+    subject: string;
+    body: string;
+    kind: OutboxKind;
+    booking_status: string;
+    starts_at: Date | null;
+  }>(
     `SELECT b.customer_email AS email,
             o.rendered_subject AS subject,
-            o.rendered_body    AS body
+            o.rendered_body    AS body,
+            o.kind,
+            b.status           AS booking_status,
+            b.starts_at
        FROM email_outbox o
        JOIN bookings b ON b.id = o.booking_id
       WHERE o.id = $1`,
@@ -88,13 +136,32 @@ export async function loadMessage(db: Queryable, id: number): Promise<EmailMessa
   );
   const row = rows[0];
   if (!row) return null;
-  return { to: row.email, subject: row.subject, body: row.body };
+  return {
+    to: row.email,
+    subject: row.subject,
+    body: row.body,
+    kind: row.kind,
+    bookingStatus: row.booking_status,
+    startsAt: row.starts_at,
+  };
 }
 
 export async function markSent(db: Queryable, id: number, sentAt: Date): Promise<void> {
   await db.query(
     `UPDATE email_outbox SET status = 'sent', sent_at = $2, last_error = NULL WHERE id = $1`,
     [id, sentAt],
+  );
+}
+
+/**
+ * Recordatorio que ya no aplica (reserva cancelada, empezada o eliminada).
+ * No es un fallo de envío: `skipped` deja la razón visible en el admin y evita
+ * que el worker lo reintente para siempre.
+ */
+export async function markSkipped(db: Queryable, id: number, reason: string): Promise<void> {
+  await db.query(
+    `UPDATE email_outbox SET status = 'skipped', last_error = $2 WHERE id = $1`,
+    [id, reason],
   );
 }
 

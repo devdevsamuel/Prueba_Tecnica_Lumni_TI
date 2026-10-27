@@ -3,10 +3,12 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { AdminGate } from '../components/AdminGate';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { Collapse } from '../components/Collapse';
 import { Textarea } from '../components/Input';
 import { Modal } from '../components/Modal';
 import { isStatusKind, StatusBadge } from '../components/StatusBadge';
-import { ErrorState, LoadingState } from '../components/states';
+import { Skeleton } from '../components/Skeleton';
+import { ErrorState } from '../components/states';
 import { ApiError } from '../lib/api';
 import { adminCancelBooking, adminFetchBooking } from '../lib/admin';
 import { useSession } from '../lib/auth';
@@ -82,7 +84,7 @@ export function AdminBookingPage() {
   if (loading) {
     content = (
       <Card>
-        <LoadingState label="Cargando reserva…" />
+        <Skeleton variant="card" rows={4} label="Cargando reserva…" />
       </Card>
     );
   } else if (error || !booking) {
@@ -183,11 +185,13 @@ export function AdminBookingPage() {
             </>
           }
         >
-          {saveError && (
-            <p className="alert" role="alert">
-              {saveError}
-            </p>
-          )}
+          <Collapse open={Boolean(saveError)}>
+            {saveError && (
+              <p className="alert" role="alert">
+                {saveError}
+              </p>
+            )}
+          </Collapse>
           <p>
             El motivo es obligatorio. Esta acción pasará la reserva a <strong>cancelada</strong> y no
             se puede deshacer.
@@ -207,7 +211,9 @@ export function AdminBookingPage() {
 
   return (
     <AdminGate session={session} title={`Reserva #${bookingId}`} intro="Detalle de la reserva">
-      {content}
+      <div key={loading ? 'loading' : 'ready'} className={loading ? undefined : 'rise-in'}>
+        {content}
+      </div>
     </AdminGate>
   );
 }

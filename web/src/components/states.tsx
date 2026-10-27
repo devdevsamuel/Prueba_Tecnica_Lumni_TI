@@ -14,7 +14,7 @@ export interface EmptyStateProps {
 export function EmptyState({ title, description, action }: EmptyStateProps) {
   return (
     <div className="state">
-      <h3 className="state__title">{title}</h3>
+      <h2 className="state__title">{title}</h2>
       {description && <p className="state__description">{description}</p>}
       {action}
     </div>
@@ -42,7 +42,7 @@ export interface ErrorStateProps {
 export function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
     <div className="state state--error" role="alert">
-      <h3 className="state__title">Algo salió mal</h3>
+      <h2 className="state__title">Algo salió mal</h2>
       <p className="state__description">{message}</p>
       {onRetry && (
         <Button variant="secondary" onClick={onRetry}>

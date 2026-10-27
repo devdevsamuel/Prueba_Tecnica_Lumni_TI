@@ -218,8 +218,18 @@ async function buildView(deps: BookingDeps, id: number): Promise<BookingView> {
     .filter((code): code is ServiceCode => code !== null);
 
   // Aviso de disponibilidad: se calcula pero nunca bloquea una lectura.
+  // Solo tiene sentido para un borrador o para una reserva cancelada: en este
+  // último caso el turno quedó libre y se quiere ofrecer el siguiente hueco.
+  // Una reserva `confirmed` ya ocupa su propio horario, por lo que su
+  // sugerencia sería inválida (además, su propio booking aparecería como
+  // ocupado y ocultaría el siguiente hueco real).
   let availability: AvailabilityView | null = null;
-  if (row.room_id && row.starts_at && row.ends_at) {
+  if (
+    (row.status === 'draft' || row.status === 'cancelled') &&
+    row.room_id &&
+    row.starts_at &&
+    row.ends_at
+  ) {
     const { result } = await evaluate(deps, {
       roomId: row.room_id,
       date: bogotaDateStr(row.starts_at),
@@ -346,7 +356,16 @@ export async function saveDraft(deps: BookingDeps, input: DraftInput): Promise<B
   let lines: readonly BookingLineDraft[] = [];
   let availability: AvailabilityView | null = null;
 
-  if (fields.roomId !== null && startsAt && endsAt && fields.startTime && fields.durationMinutes !== null) {
+  // La disponibilidad se ofrece solo mientras la reserva sea un borrador.
+  // En una creación nueva (`existing` no existe) también corresponde.
+  if (
+    (existing === undefined || existing.status === 'draft') &&
+    fields.roomId !== null &&
+    startsAt &&
+    endsAt &&
+    fields.startTime &&
+    fields.durationMinutes !== null
+  ) {
     const { result } = await evaluate(deps, {
       roomId: fields.roomId,
       date: fields.date as string,

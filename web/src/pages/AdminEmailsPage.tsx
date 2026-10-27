@@ -6,7 +6,8 @@ import { Card } from '../components/Card';
 import { Select } from '../components/Input';
 import { isStatusKind, StatusBadge } from '../components/StatusBadge';
 import { Table, type Column } from '../components/Table';
-import { EmptyState, ErrorState, LoadingState } from '../components/states';
+import { Skeleton } from '../components/Skeleton';
+import { EmptyState, ErrorState } from '../components/states';
 import { ApiError } from '../lib/api';
 import { fetchEmails, isEmailStatus, type EmailItem, type EmailListResponse } from '../lib/admin';
 import { formatBogotaFull } from '../lib/datetime';
@@ -25,6 +26,7 @@ const STATUS_OPTIONS = [
   { value: 'sending', label: 'Enviando' },
   { value: 'sent', label: 'Enviado' },
   { value: 'failed', label: 'Fallido' },
+  { value: 'skipped', label: 'Omitido' },
 ] as const;
 
 export function AdminEmailsPage() {
@@ -59,6 +61,13 @@ export function AdminEmailsPage() {
     return () => controller.abort();
   }, [isAdmin, page, status, reloadKey]);
 
+  // Igual que en reservas: una página fuera de rango vuelve a la última real.
+  useEffect(() => {
+    if (data && data.totalPages > 0 && page > data.totalPages) {
+      applyPage(data.totalPages);
+    }
+  }, [data, page]);
+
   function applyFilter(value: string): void {
     const next = new URLSearchParams(searchParams);
     if (value) next.set('status', value);
@@ -82,6 +91,8 @@ export function AdminEmailsPage() {
   }
 
   const hasFilter = Boolean(status);
+  const initialLoading = loading && data === null;
+  const refreshing = loading && data !== null;
   const columns: Column<EmailItem>[] = [
     { key: 'id', header: 'ID', render: (item) => item.id },
     { key: 'subject', header: 'Asunto', render: (item) => item.subject },
@@ -97,7 +108,12 @@ export function AdminEmailsPage() {
     {
       key: 'timestamp',
       header: 'Enviado',
-      render: (item) => (item.sentAt ? formatBogotaFull(item.sentAt) : '—'),
+      render: (item) =>
+        item.sentAt ? (
+          <time dateTime={item.sentAt}>{formatBogotaFull(item.sentAt)}</time>
+        ) : (
+          '—'
+        ),
     },
     {
       key: 'actions',
@@ -114,7 +130,7 @@ export function AdminEmailsPage() {
   ];
 
   return (
-    <AdminGate session={session} title="Correos" intro="Bandeja de salida de confirmaciones">
+    <AdminGate session={session} title="Correos" intro="Bandeja de salida de confirmaciones y recordatorios">
       <Card title="Filtros">
         <div className="filters">
           <Select
@@ -142,53 +158,60 @@ export function AdminEmailsPage() {
       <Card title="Bandeja">
         {error ? (
           <ErrorState message={error} onRetry={() => setReloadKey((key) => key + 1)} />
-        ) : loading || !data ? (
-          <LoadingState label="Cargando la bandeja…" />
-        ) : data.total === 0 && hasFilter ? (
-          <EmptyState
-            title="Sin resultados para este filtro"
-            description="Ningún correo coincide con el estado seleccionado."
-            action={
-              <Button variant="secondary" onClick={clearFilters}>
-                Limpiar filtros
-              </Button>
-            }
-          />
-        ) : data.total === 0 ? (
-          <EmptyState
-            title="Todavía no ha salido ningún correo"
-            description="Los correos de confirmación aparecen aquí en cuanto un cliente confirma su reserva."
-          />
-        ) : (
+        ) : initialLoading ? (
+          <Skeleton variant="table" rows={PAGE_SIZE} columns={columns.length} label="Cargando la bandeja…" />
+        ) : !data ? null : (
           <>
-            <Table
-              caption={`Correos (página ${data.page} de ${Math.max(1, data.totalPages)}, ${data.total} en total)`}
-              columns={columns}
-              rows={data.items}
-              rowKey={(item) => item.id}
-            />
+            {refreshing && <div className="refresh-bar" role="status" aria-label="Actualizando la bandeja" />}
+            <div className={refreshing ? 'is-refreshing' : undefined} aria-busy={refreshing || undefined}>
+              {data.total === 0 && hasFilter ? (
+                <EmptyState
+                  title="Sin resultados para este filtro"
+                  description="Ningún correo coincide con el estado seleccionado."
+                  action={
+                    <Button variant="secondary" onClick={clearFilters}>
+                      Limpiar filtros
+                    </Button>
+                  }
+                />
+              ) : data.total === 0 ? (
+                <EmptyState
+                  title="Todavía no ha salido ningún correo"
+                  description="Las confirmaciones y los recordatorios aparecen aquí en cuanto se encolan."
+                />
+              ) : (
+                <>
+                  <Table
+                    caption={`Correos (página ${data.page} de ${Math.max(1, data.totalPages)}, ${data.total} en total)`}
+                    columns={columns}
+                    rows={data.items}
+                    rowKey={(item) => item.id}
+                  />
 
-            {data.totalPages > 1 && (
-              <nav className="pagination" aria-label="Paginación de correos">
-                {page > 1 ? (
-                  <Button variant="secondary" onClick={() => applyPage(page - 1)}>
-                    Página anterior
-                  </Button>
-                ) : (
-                  <span className="pagination__gap" aria-hidden="true" />
-                )}
-                <span className="pagination__current" aria-current="page">
-                  Página {page} de {data.totalPages}
-                </span>
-                {page < data.totalPages ? (
-                  <Button variant="secondary" onClick={() => applyPage(page + 1)}>
-                    Página siguiente
-                  </Button>
-                ) : (
-                  <span className="pagination__gap" aria-hidden="true" />
-                )}
-              </nav>
-            )}
+                  {data.totalPages > 1 && (
+                    <nav className="pagination" aria-label="Paginación de correos">
+                      {page > 1 ? (
+                        <Button variant="secondary" onClick={() => applyPage(page - 1)}>
+                          Página anterior
+                        </Button>
+                      ) : (
+                        <span className="pagination__gap" aria-hidden="true" />
+                      )}
+                      <span className="pagination__current" aria-current="page">
+                        Página {page} de {data.totalPages}
+                      </span>
+                      {page < data.totalPages ? (
+                        <Button variant="secondary" onClick={() => applyPage(page + 1)}>
+                          Página siguiente
+                        </Button>
+                      ) : (
+                        <span className="pagination__gap" aria-hidden="true" />
+                      )}
+                    </nav>
+                  )}
+                </>
+              )}
+            </div>
           </>
         )}
       </Card>

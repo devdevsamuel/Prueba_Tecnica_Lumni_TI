@@ -6,7 +6,8 @@ import { Card } from '../components/Card';
 import { Select } from '../components/Input';
 import { isStatusKind, StatusBadge } from '../components/StatusBadge';
 import { Table, type Column } from '../components/Table';
-import { EmptyState, ErrorState, LoadingState } from '../components/states';
+import { Skeleton } from '../components/Skeleton';
+import { EmptyState, ErrorState } from '../components/states';
 import { ApiError } from '../lib/api';
 import { fetchBookings, type AdminListItem, type AdminListResponse } from '../lib/admin';
 import { formatBogota } from '../lib/datetime';
@@ -37,7 +38,7 @@ export function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [rooms, setRooms] = useState<Room[] | null>(null);
 
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1);
   const status = searchParams.get('status') ?? '';
@@ -63,6 +64,14 @@ export function AdminPage() {
       });
     return () => controller.abort();
   }, [isAdmin, page, status, room, reloadKey]);
+
+  // Una página fuera de rango (URL editada o último registro cancelado) se
+  // recoloca en la última existente en vez de mostrar una tabla vacía.
+  useEffect(() => {
+    if (data && data.totalPages > 0 && page > data.totalPages) {
+      applyPage(data.totalPages);
+    }
+  }, [data, page]);
 
   // El selector de salas solo se pide una vez.
   useEffect(() => {
@@ -96,6 +105,10 @@ export function AdminPage() {
   }
 
   const hasFilters = Boolean(status || room);
+  // Primera carga (sin datos) → esqueleto; recarga por filtro/página → se
+  // conservan las filas y solo se atenúan (stale-while-revalidate).
+  const initialLoading = loading && data === null;
+  const refreshing = loading && data !== null;
   const columns: Column<AdminListItem>[] = [
     { key: 'id', header: 'ID', render: (item) => item.id },
     { key: 'customer', header: 'Cliente', render: (item) => item.customerName },
@@ -155,8 +168,8 @@ export function AdminPage() {
             value={room}
             onChange={(event) => applyFilter('room', event.target.value)}
           >
-            <option value="">Todas las salas</option>
-            {rooms.map((option) => (
+            <option value="">{rooms === null ? 'Cargando salas…' : 'Todas las salas'}</option>
+            {(rooms ?? []).map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
               </option>
@@ -175,58 +188,65 @@ export function AdminPage() {
       <Card title="Reservas">
         {error ? (
           <ErrorState message={error} onRetry={() => setReloadKey((key) => key + 1)} />
-        ) : loading || !data ? (
-          <LoadingState label="Cargando reservas…" />
-        ) : data.total === 0 && hasFilters ? (
-          <EmptyState
-            title="Sin resultados para este filtro"
-            description="Ninguna reserva coincide con los filtros seleccionados."
-            action={
-              <Button variant="secondary" onClick={clearFilters}>
-                Limpiar filtros
-              </Button>
-            }
-          />
-        ) : data.total === 0 ? (
-          <EmptyState
-            title="Aún no hay reservas"
-            description="Cuando alguien cotice y reserve, aparecerá aquí."
-            action={
-              <Link className="btn btn--secondary" to="/reserva">
-                Ir al cotizador
-              </Link>
-            }
-          />
-        ) : (
+        ) : initialLoading ? (
+          <Skeleton variant="table" rows={PAGE_SIZE} columns={columns.length} label="Cargando reservas…" />
+        ) : !data ? null : (
           <>
-            <Table
-              caption={`Reservas (página ${data.page} de ${Math.max(1, data.totalPages)}, ${data.total} en total)`}
-              columns={columns}
-              rows={data.items}
-              rowKey={(item) => item.id}
-            />
+            {refreshing && <div className="refresh-bar" role="status" aria-label="Actualizando reservas" />}
+            <div className={refreshing ? 'is-refreshing' : undefined} aria-busy={refreshing || undefined}>
+              {data.total === 0 && hasFilters ? (
+                <EmptyState
+                  title="Sin resultados para este filtro"
+                  description="Ninguna reserva coincide con los filtros seleccionados."
+                  action={
+                    <Button variant="secondary" onClick={clearFilters}>
+                      Limpiar filtros
+                    </Button>
+                  }
+                />
+              ) : data.total === 0 ? (
+                <EmptyState
+                  title="Aún no hay reservas"
+                  description="Cuando alguien cotice y reserve, aparecerá aquí."
+                  action={
+                    <Link className="btn btn--secondary" to="/reserva">
+                      Ir al cotizador
+                    </Link>
+                  }
+                />
+              ) : (
+                <>
+                  <Table
+                    caption={`Reservas (página ${data.page} de ${Math.max(1, data.totalPages)}, ${data.total} en total)`}
+                    columns={columns}
+                    rows={data.items}
+                    rowKey={(item) => item.id}
+                  />
 
-            {data.totalPages > 1 && (
-              <nav className="pagination" aria-label="Paginación de reservas">
-                {page > 1 ? (
-                  <Button variant="secondary" onClick={() => applyPage(page - 1)}>
-                    Página anterior
-                  </Button>
-                ) : (
-                  <span className="pagination__gap" aria-hidden="true" />
-                )}
-                <span className="pagination__current" aria-current="page">
-                  Página {page} de {data.totalPages}
-                </span>
-                {page < data.totalPages ? (
-                  <Button variant="secondary" onClick={() => applyPage(page + 1)}>
-                    Página siguiente
-                  </Button>
-                ) : (
-                  <span className="pagination__gap" aria-hidden="true" />
-                )}
-              </nav>
-            )}
+                  {data.totalPages > 1 && (
+                    <nav className="pagination" aria-label="Paginación de reservas">
+                      {page > 1 ? (
+                        <Button variant="secondary" onClick={() => applyPage(page - 1)}>
+                          Página anterior
+                        </Button>
+                      ) : (
+                        <span className="pagination__gap" aria-hidden="true" />
+                      )}
+                      <span className="pagination__current" aria-current="page">
+                        Página {page} de {data.totalPages}
+                      </span>
+                      {page < data.totalPages ? (
+                        <Button variant="secondary" onClick={() => applyPage(page + 1)}>
+                          Página siguiente
+                        </Button>
+                      ) : (
+                        <span className="pagination__gap" aria-hidden="true" />
+                      )}
+                    </nav>
+                  )}
+                </>
+              )}
+            </div>
           </>
         )}
       </Card>

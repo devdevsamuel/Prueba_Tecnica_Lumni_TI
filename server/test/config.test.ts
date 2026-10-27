@@ -55,3 +55,23 @@ test('config: un presupuesto no numérico falla al arrancar', () => {
     (error: unknown) => error instanceof ConfigError && /AI_MONTHLY_TOKEN_BUDGET/.test(error.message),
   );
 });
+
+test('config: la conexión del migrador cae a DATABASE_URL si no se define', () => {
+  const config = loadConfig(env());
+  assert.equal(config.migratorDatabaseUrl, config.databaseUrl);
+});
+
+test('config: MIGRATOR_DATABASE_URL permite separar DDL de DML', () => {
+  const config = loadConfig(
+    env({ MIGRATOR_DATABASE_URL: 'postgresql://owner@localhost:5432/coworking' }),
+  );
+  assert.equal(config.migratorDatabaseUrl, 'postgresql://owner@localhost:5432/coworking');
+  assert.equal(config.databaseUrl, 'postgresql://localhost:5432/coworking');
+});
+
+test('config: una MIGRATOR_DATABASE_URL inválida falla al arrancar', () => {
+  assert.throws(
+    () => loadConfig(env({ MIGRATOR_DATABASE_URL: 'no-es-una-url' })),
+    (error: unknown) => error instanceof ConfigError && /MIGRATOR_DATABASE_URL/.test(error.message),
+  );
+});

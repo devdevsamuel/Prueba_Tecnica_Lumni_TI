@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { Collapse } from '../components/Collapse';
 import { Input, Select } from '../components/Input';
-import { EmptyState, ErrorState, LoadingState } from '../components/states';
+import { Skeleton } from '../components/Skeleton';
+import { EmptyState, ErrorState } from '../components/states';
 import { ApiError } from '../lib/api';
+import { todayBogota } from '../lib/datetime';
 import {
   DURATION_OPTIONS,
   fetchRooms,
@@ -34,6 +37,87 @@ interface FormValues {
 
 const EMPTY_FORM: FormValues = { roomId: '', date: '', startTime: '', durationMinutes: '' };
 
+/**
+ * Snapshot de la pantalla: formulario + último resultado.
+ *
+ * Vive en `sessionStorage` (por pestaña, muere al cerrarla) para que ir a
+ * "Reservar esta sala" y volver (atrás del navegador o nav) **no borre lo
+ * rellenado**. No contiene datos personales, solo sala/fecha/hora/duración.
+ */
+const SNAPSHOT_KEY = 'coworking:cotizacion';
+
+interface QuoteSnapshot {
+  readonly form: FormValues;
+  readonly result: QuoteResult | null;
+}
+
+/** Guard mínima de lo que la UI pinta: si el esquema cambió, se ignora el dato. */
+function isFormValues(value: unknown): value is FormValues {
+  if (typeof value !== 'object' || value === null) return false;
+  const fields = value as Record<string, unknown>;
+  return (
+    typeof fields.roomId === 'string' &&
+    typeof fields.date === 'string' &&
+    typeof fields.startTime === 'string' &&
+    typeof fields.durationMinutes === 'string'
+  );
+}
+
+function isQuoteResult(value: unknown): value is QuoteResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const room = candidate.room;
+  if (typeof room !== 'object' || room === null) return false;
+  const roomFields = room as Record<string, unknown>;
+  const slot = candidate.suggestedSlot;
+  return (
+    typeof candidate.canBook === 'boolean' &&
+    (candidate.reason === null || typeof candidate.reason === 'string') &&
+    typeof candidate.date === 'string' &&
+    typeof candidate.startTime === 'string' &&
+    typeof candidate.endTime === 'string' &&
+    typeof candidate.durationMinutes === 'number' &&
+    typeof candidate.isSaturday === 'boolean' &&
+    typeof candidate.base === 'number' &&
+    typeof candidate.discountPercent === 'number' &&
+    typeof candidate.discount === 'number' &&
+    typeof candidate.surcharge === 'number' &&
+    typeof candidate.total === 'number' &&
+    typeof roomFields.id === 'number' &&
+    typeof roomFields.name === 'string' &&
+    (slot === null ||
+      (typeof slot === 'object' &&
+        slot !== null &&
+        typeof (slot as Record<string, unknown>).date === 'string' &&
+        typeof (slot as Record<string, unknown>).startTime === 'string'))
+  );
+}
+
+/** Devuelve lo guardado o un vacío; cualquier error de lectura → vacío. */
+function readSnapshot(): QuoteSnapshot {
+  const empty: QuoteSnapshot = { form: EMPTY_FORM, result: null };
+  try {
+    const raw = sessionStorage.getItem(SNAPSHOT_KEY);
+    if (!raw) return empty;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return empty;
+    const { form, result } = parsed as { form?: unknown; result?: unknown };
+    if (!isFormValues(form)) return empty;
+    return { form, result: isQuoteResult(result) ? result : null };
+  } catch {
+    return empty;
+  }
+}
+
+/** Escritura defensiva: Safari privado o cuota llena no rompen la pantalla. */
+function writeSnapshot(form: FormValues, result: QuoteResult | null): void {
+  try {
+    sessionStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ form, result }));
+  } catch {
+    // Sin storage la app sigue funcionando; solo no sobrevive a la navegación.
+  }
+}
+
 function requiredError(label: string, value: string): string | undefined {
   return value ? undefined : `Selecciona ${label}.`;
 }
@@ -43,7 +127,9 @@ export function QuotePage() {
   const [roomsError, setRoomsError] = useState<string | null>(null);
   const [loadKey, setLoadKey] = useState(0);
 
-  const [form, setForm] = useState<FormValues>(EMPTY_FORM);
+  // Al montar se recupera el snapshot: lo que había al salir hacia "Reservar".
+  const [initial] = useState(readSnapshot);
+  const [form, setForm] = useState<FormValues>(initial.form);
   const [touched, setTouched] = useState<Record<keyof FormValues, boolean>>({
     roomId: false,
     date: false,
@@ -52,8 +138,17 @@ export function QuotePage() {
   });
 
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<QuoteResult | null>(null);
+  const [result, setResult] = useState<QuoteResult | null>(initial.result);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Contador > 0 tras cada cotización nueva: reinicia el resaltado y dispara el foco. */
+  const [flash, setFlash] = useState(0);
+  const resultRef = useRef<HTMLDivElement>(null);
+
+  // Snapshot continuo: formulario + resultado sobreviven a "Reservar → atrás"
+  // (y a recargar la pestaña). Vive solo en esta pestaña (sessionStorage).
+  useEffect(() => {
+    writeSnapshot(form, result);
+  }, [form, result]);
 
   // Carga de salas con reintentable (estado de carga / error / éxito).
   useEffect(() => {
@@ -69,6 +164,18 @@ export function QuotePage() {
       });
     return () => controller.abort();
   }, [loadKey]);
+
+  // Tras cotizar (disponible o NO), el foco y la vista saltan al resultado:
+  // no hace falta hacer scroll. El snapshot restaurado tiene flash=0 → al
+  // volver desde el wizard no se roba el foco ni se centra nada (docs/06 §4).
+  useEffect(() => {
+    if (flash === 0) return;
+    const node = resultRef.current;
+    if (!node) return;
+    node.focus({ preventScroll: true });
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    node.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'center' });
+  }, [flash]);
 
   const fieldErrors: Record<keyof FormValues, string | undefined> = {
     roomId: requiredError('una sala', form.roomId),
@@ -88,6 +195,7 @@ export function QuotePage() {
         durationMinutes: Number(values.durationMinutes),
       });
       setResult(quoteResult);
+      setFlash((count) => count + 1);
     } catch (error: unknown) {
       // Lo escrito nunca se pierde (docs/06 §3): el error es reintenable.
       setResult(null);
@@ -120,7 +228,27 @@ export function QuotePage() {
     void runQuote(next);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  /** Vacía el formulario y oculta el resultado de la cotización anterior. */
+  function handleReset(): void {
+    setForm(EMPTY_FORM);
+    setTouched({ roomId: false, date: false, startTime: false, durationMinutes: false });
+    setResult(null);
+    setSubmitError(null);
+    setFlash(0);
+  }
+
+  /** Reserva otra sala desde el resultado actual, sin arrastrar datos viejos. */
+  function handleNewRoom(): void {
+    try {
+      sessionStorage.removeItem(SNAPSHOT_KEY);
+      localStorage.removeItem('coworking:borrador');
+    } catch {
+      // Sin storage la aplicación sigue funcionando.
+    }
+    handleReset();
+  }
+
+  const today = todayBogota();
 
   return (
     <div className="stack-lg">
@@ -135,7 +263,7 @@ export function QuotePage() {
         {roomsError ? (
           <ErrorState message={roomsError} onRetry={() => setLoadKey((key) => key + 1)} />
         ) : rooms === null ? (
-          <LoadingState label="Cargando salas…" />
+          <Skeleton variant="fields" rows={4} label="Cargando salas…" />
         ) : rooms.length === 0 ? (
           <EmptyState
             title="No hay salas disponibles"
@@ -220,21 +348,29 @@ export function QuotePage() {
               <Button type="submit" variant="primary" loading={submitting}>
                 Cotizar
               </Button>
+              <Button type="button" variant="secondary" onClick={handleReset}>
+                Limpiar
+              </Button>
             </div>
           </form>
         )}
       </Card>
 
-      {submitError && (
-        <ErrorState message={submitError} onRetry={() => void runQuote(form)} />
-      )}
+      <Collapse open={Boolean(submitError)}>
+        {submitError && (
+          <ErrorState message={submitError} onRetry={() => void runQuote(form)} />
+        )}
+      </Collapse>
 
       {result && (
-        <Card>
+        <Card className="rise-in">
           <div
+            key={flash}
+            ref={resultRef}
+            tabIndex={-1}
             className={`quote-result ${
               result.canBook ? 'quote-result--available' : 'quote-result--blocked'
-            }`}
+            }${flash > 0 ? ' quote-result--flash' : ''}`}
             role="status"
             aria-live="polite"
           >
@@ -273,9 +409,21 @@ export function QuotePage() {
                   <Link
                     className="btn btn--primary"
                     to={`/reserva?sala=${result.room.id}&fecha=${result.date}&hora=${result.startTime}&duracion=${result.durationMinutes}`}
+                    onClick={() => {
+                      try {
+                        // El wizard empieza desde esta cotización, no desde el
+                        // borrador guardado de una reserva anterior.
+                        localStorage.removeItem('coworking:borrador');
+                      } catch {
+                        // Sin storage la aplicación sigue funcionando.
+                      }
+                    }}
                   >
                     Reservar esta sala
                   </Link>
+                  <Button variant="secondary" onClick={handleNewRoom}>
+                    Cotizar otra sala
+                  </Button>
                 </p>
               </>
             ) : (

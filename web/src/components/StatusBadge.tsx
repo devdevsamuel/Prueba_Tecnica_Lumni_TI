@@ -10,7 +10,8 @@ export type StatusKind =
   | 'pending'
   | 'sending'
   | 'sent'
-  | 'failed';
+  | 'failed'
+  | 'skipped';
 
 const STATUS_LABELS: Record<StatusKind, string> = {
   draft: 'Borrador',
@@ -21,6 +22,7 @@ const STATUS_LABELS: Record<StatusKind, string> = {
   sending: 'Enviando',
   sent: 'Enviado',
   failed: 'Fallido',
+  skipped: 'Omitido',
 };
 
 export interface StatusBadgeProps {
@@ -37,7 +39,8 @@ export function isStatusKind(value: string): value is StatusKind {
     value === 'pending' ||
     value === 'sending' ||
     value === 'sent' ||
-    value === 'failed'
+    value === 'failed' ||
+    value === 'skipped'
   );
 }
 

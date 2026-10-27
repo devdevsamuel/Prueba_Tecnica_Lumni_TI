@@ -18,3 +18,10 @@ export function formatBogota(iso: string | null, empty = 'Sin horario'): string 
 export function formatBogotaFull(iso: string | null): string {
   return formatBogota(iso, '—');
 }
+
+const BOGOTA_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' });
+
+/** Fecha de hoy del negocio en `YYYY-MM-DD` (para `min` del date picker). */
+export function todayBogota(): string {
+  return BOGOTA_DAY.format(new Date());
+}

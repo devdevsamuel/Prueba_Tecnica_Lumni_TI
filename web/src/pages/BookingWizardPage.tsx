@@ -7,12 +7,14 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
+import { Collapse } from '../components/Collapse';
 import { Input, Select, Textarea } from '../components/Input';
+import { Skeleton } from '../components/Skeleton';
 import { Stepper } from '../components/Stepper';
-import { EmptyState, ErrorState, LoadingState } from '../components/states';
+import { EmptyState, ErrorState } from '../components/states';
 import { ApiError } from '../lib/api';
 import {
   cancelBooking,
@@ -103,6 +105,7 @@ function stepFor(booking: Booking): number {
 
 export function BookingWizardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [roomsError, setRoomsError] = useState<string | null>(null);
@@ -113,8 +116,11 @@ export function BookingWizardPage() {
   const [booking, setBooking] = useState<Booking | null>(null);
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
+  /** Hasta terminar de leer URL/localStorage no se pinta el formulario. */
+  const [booted, setBooted] = useState(false);
 
-  const [busy, setBusy] = useState<'idle' | 'saving' | 'restoring' | 'confirming'>('idle');
+  const [busy, setBusy] = useState<'idle' | 'saving' | 'confirming'>('idle');
+  const [pendingService, setPendingService] = useState<ServiceCode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [suggested, setSuggested] = useState<{ date: string; startTime: string } | null>(null);
@@ -142,8 +148,14 @@ export function BookingWizardPage() {
       durationMinutes: next.durationMinutes === null ? '' : String(next.durationMinutes),
       services: [...next.services],
     });
-    localStorage.setItem(STORAGE_KEY, String(next.id));
-    if (next.status === 'confirmed') setDone(true);
+    // Solo un borrador editable se retoma al recargar. Una reserva confirmada
+    // o cancelada es un resultado final: guardarla aquí hacía que el wizard
+    // resurrecta sus datos viejos y ofreciera sugerencias inválidas.
+    if (next.status === 'draft') {
+      localStorage.setItem(STORAGE_KEY, String(next.id));
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+    }
   }, []);
 
   // Carga de salas (estado carga / error / éxito).
@@ -165,45 +177,52 @@ export function BookingWizardPage() {
     let cancelled = false;
 
     async function restore(): Promise<void> {
-      const params = new URLSearchParams(window.location.search);
-      const id = params.get('borrador') ?? localStorage.getItem(STORAGE_KEY);
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('borrador') ?? localStorage.getItem(STORAGE_KEY);
 
-      if (id && /^\d+$/.test(id)) {
-        setBusy('restoring');
-        try {
-          const existing = await fetchBooking(Number(id));
-          if (cancelled) return;
-          applyBooking(existing);
-          setStep(stepFor(existing));
-          setNotice(
-            existing.status === 'confirmed'
-              ? `La reserva #${existing.id} ya estaba confirmada.`
-              : `Borrador retomado #${existing.id}, continúa donde lo dejaste.`,
-          );
-          return;
-        } catch {
-          if (cancelled) return;
-          // Id caducado o inexistente: se empieza uno nuevo sin romper la UI.
-          localStorage.removeItem(STORAGE_KEY);
-        } finally {
-          if (!cancelled) setBusy('idle');
+        if (id && /^\d+$/.test(id)) {
+          try {
+            const existing = await fetchBooking(Number(id));
+            if (cancelled) return;
+            applyBooking(existing);
+            setStep(stepFor(existing));
+            if (existing.status === 'confirmed') {
+              setDone(true);
+              setNotice(`La reserva #${existing.id} ya estaba confirmada.`);
+            } else if (existing.status === 'cancelled') {
+              setDone(true);
+              setNotice(`La reserva #${existing.id} está cancelada.`);
+            } else {
+              setNotice(`Borrador retomado #${existing.id}, continúa donde lo dejaste.`);
+            }
+            return;
+          } catch {
+            if (cancelled) return;
+            // Id caducado, inexistente o ya finalizado: no se debe retomar como
+            // borrador editable. Se empieza uno nuevo sin romper la UI.
+            localStorage.removeItem(STORAGE_KEY);
+          }
         }
-      }
 
-      // Sin borrador: rellena el horario que venía de la cotización.
-      const sala = params.get('sala');
-      const fecha = params.get('fecha');
-      const hora = params.get('hora');
-      const duracion = params.get('duracion');
-      if (sala || fecha || hora || duracion) {
-        setForm((current) => ({
-          ...current,
-          roomId: sala ?? current.roomId,
-          date: fecha ?? current.date,
-          startTime: hora ?? current.startTime,
-          durationMinutes: duracion ?? current.durationMinutes,
-        }));
-        setNotice('Datos de tu cotización cargados en el paso 2.');
+        // Sin borrador: rellena el horario que venía de la cotización.
+        const sala = params.get('sala');
+        const fecha = params.get('fecha');
+        const hora = params.get('hora');
+        const duracion = params.get('duracion');
+        if (sala || fecha || hora || duracion) {
+          setForm((current) => ({
+            ...current,
+            roomId: sala ?? current.roomId,
+            date: fecha ?? current.date,
+            startTime: hora ?? current.startTime,
+            durationMinutes: duracion ?? current.durationMinutes,
+          }));
+          setNotice('Datos de tu cotización cargados en el paso 2.');
+        }
+      } finally {
+        // También con un id caducado: la UI deja de mostrar el esqueleto.
+        if (!cancelled) setBooted(true);
       }
     }
 
@@ -282,6 +301,7 @@ export function BookingWizardPage() {
     const nextForm = { ...form, services };
     setForm(nextForm);
     setBusy('saving');
+    setPendingService(code);
     setError(null);
     try {
       await persist(nextForm);
@@ -290,6 +310,7 @@ export function BookingWizardPage() {
       fail(message, () => toggleService(code));
     } finally {
       setBusy('idle');
+      setPendingService(null);
     }
   }
 
@@ -314,6 +335,43 @@ export function BookingWizardPage() {
   }
 
   async function useSuggested(slot: { date: string; startTime: string }): Promise<void> {
+    // Una reserva cancelada no se puede editar: la sugerencia crea un borrador
+    // NUEVO con el horario alternativo, conservando los datos del cliente.
+    if (booking?.status === 'cancelled') {
+      const nextForm: Form = {
+        ...EMPTY_FORM,
+        customerName: booking.customerName ?? '',
+        customerEmail: booking.customerEmail ?? '',
+        roomId: booking.roomId === null ? '' : String(booking.roomId),
+        date: slot.date,
+        startTime: slot.startTime,
+        durationMinutes: booking.durationMinutes === null ? '' : String(booking.durationMinutes),
+        services: [...booking.services],
+      };
+      setBooking(null);
+      setForm(nextForm);
+      setTouched({});
+      setDone(false);
+      setSuggested(null);
+      setNotice('Borrador nuevo creado con el horario sugerido.');
+      await run(async () => {
+        const created = await saveDraft({
+          customerName: nextForm.customerName,
+          customerEmail: nextForm.customerEmail,
+          roomId: nextForm.roomId ? Number(nextForm.roomId) : undefined,
+          date: nextForm.date,
+          startTime: nextForm.startTime,
+          durationMinutes: nextForm.durationMinutes ? Number(nextForm.durationMinutes) : undefined,
+          services: nextForm.services,
+        });
+        applyBooking(created);
+        setSearchParams({ borrador: String(created.id) });
+        setStep(2);
+      });
+      return;
+    }
+
+    if (booking?.status !== 'draft') return;
     const nextForm = { ...form, date: slot.date, startTime: slot.startTime };
     setForm(nextForm);
     setSuggested(null);
@@ -335,13 +393,67 @@ export function BookingWizardPage() {
       applyBooking(cancelled);
       setDone(true);
       setShowCancel(false);
+      // La sugerencia se recalcula en el servidor: tras cancelar, el turno
+      // queda libre y `availability` vuelve a traer el hueco alternativo.
+      setSuggested(null);
       localStorage.removeItem(STORAGE_KEY);
       setSearchParams({});
     });
   }
 
+  /**
+   * Empieza una cotización nueva desde cero. Borra el borrador local para que
+   * el wizard no retome una reserva ya confirmada o cancelada.
+   */
+  function handleNewQuote(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      sessionStorage.removeItem('coworking:cotizacion');
+    } catch {
+      // Sin storage la aplicación sigue funcionando.
+    }
+    setBooking(null);
+    setForm(EMPTY_FORM);
+    setTouched({});
+    setStep(0);
+    setDone(false);
+    setSuggested(null);
+    setError(null);
+    setNotice(null);
+    setShowCancel(false);
+    setCancelReason('');
+    setCancelTouched(false);
+    setSearchParams({});
+    navigate('/', { replace: true });
+  }
+
+  /** Continúa un borrador guardado sin crear otra reserva. */
+  function handleResumeDraft(): void {
+    setDone(false);
+    setStep(booking ? stepFor(booking) : 0);
+    setNotice(null);
+  }
+
+  /** Un borrador solo se marca como "guardado" si el usuario lo deja a medias. */
+  function handleDraftSaved(): void {
+    if (!booking) return;
+    setDone(true);
+    setNotice(`Borrador #${booking.id} guardado.`);
+  }
+
+  /** Persiste el borrador y vuelve al resumen para que pueda cancelarse. */
+  async function handleSaveDraft(): Promise<void> {
+    await run(async () => {
+      await persist();
+      handleDraftSaved();
+    });
+  }
+
   /** Hueco a ofrecer: el del último 409 o el aviso de disponibilidad del servidor. */
-  const slotToOffer = suggested ?? booking?.availability?.suggestedSlot ?? null;
+  const slotToOffer =
+    booking?.status === 'draft' || booking?.status === 'cancelled'
+      ? suggested ?? booking.availability?.suggestedSlot ?? null
+      : null;
 
   function handleBack(): void {
     setStep((current) => Math.max(0, current - 1));
@@ -363,53 +475,54 @@ export function BookingWizardPage() {
   function cancelSection(): ReactNode {
     if (!booking || (booking.status !== 'draft' && booking.status !== 'confirmed')) return null;
 
-    if (!showCancel) {
-      return (
-        <div className="form-actions">
-          <Button variant="danger" onClick={() => setShowCancel(true)}>
-            Cancelar reserva
-          </Button>
-        </div>
-      );
-    }
-
     const reasonError = cancelTouched && !cancelReason.trim() ? 'El motivo es obligatorio.' : undefined;
     return (
-      <div className="cancel-panel">
-        <h3>Cancelar la reserva</h3>
-        <p>El motivo es obligatorio y este cambio no se puede deshacer.</p>
-        <Textarea
-          label="Motivo de la cancelación"
-          value={cancelReason}
-          maxLength={500}
-          error={reasonError}
-          onBlur={() => setCancelTouched(true)}
-          onChange={(event) => setCancelReason(event.target.value)}
-        />
-        <div className="form-actions">
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setShowCancel(false);
-              setCancelTouched(false);
-            }}
-          >
-            Volver
-          </Button>
-          <Button variant="danger" loading={busy === 'saving'} onClick={() => void handleCancel()}>
-            Confirmar cancelación
-          </Button>
-        </div>
-      </div>
+      <>
+        <Collapse open={!showCancel}>
+          <div className="form-actions">
+            <Button variant="danger" onClick={() => setShowCancel(true)}>
+              Cancelar reserva
+            </Button>
+          </div>
+        </Collapse>
+        <Collapse open={showCancel}>
+          <div className="cancel-panel">
+            <h3>Cancelar la reserva</h3>
+            <p>El motivo es obligatorio y este cambio no se puede deshacer.</p>
+            <Textarea
+              label="Motivo de la cancelación"
+              value={cancelReason}
+              maxLength={500}
+              error={reasonError}
+              onBlur={() => setCancelTouched(true)}
+              onChange={(event) => setCancelReason(event.target.value)}
+            />
+            <div className="form-actions">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setShowCancel(false);
+                  setCancelTouched(false);
+                }}
+              >
+                Volver
+              </Button>
+              <Button variant="danger" loading={busy === 'saving'} onClick={() => void handleCancel()}>
+                Confirmar cancelación
+              </Button>
+            </div>
+          </div>
+        </Collapse>
+      </>
     );
   }
 
-  if (busy === 'restoring' && !booking) {
+  if (!booted) {
     return (
       <div className="stack-lg">
         <h1>Reserva por pasos</h1>
         <Card>
-          <LoadingState label="Recuperando tu borrador…" />
+          <Skeleton variant="fields" rows={3} label="Recuperando tu borrador…" />
         </Card>
       </div>
     );
@@ -417,19 +530,25 @@ export function BookingWizardPage() {
 
   if (done && booking) {
     const confirmed = booking.status === 'confirmed';
+    const cancelled = booking.status === 'cancelled';
     return (
-      <div className="stack-lg">
+      <div className="stack-lg rise-in">
         <div>
-          <h1>{confirmed ? 'Reserva confirmada' : 'Reserva cancelada'}</h1>
+          <h1>{confirmed ? 'Reserva confirmada' : cancelled ? 'Reserva cancelada' : 'Reserva guardada'}</h1>
           <p className="page-intro">
             {confirmed ? (
               <>
                 Todo listo. Reserva <strong>#{booking.id}</strong> de {booking.roomName}.
               </>
-            ) : (
+            ) : cancelled ? (
               <>
                 La reserva <strong>#{booking.id}</strong> quedó cancelada y el turno vuelve a estar
                 libre.
+              </>
+            ) : (
+              <>
+                La reserva <strong>#{booking.id}</strong> sigue en borrador. Puedes cancelarla con un
+                motivo o empezar otra cotización.
               </>
             )}
           </p>
@@ -440,7 +559,7 @@ export function BookingWizardPage() {
             role="status"
             aria-live="polite"
           >
-            <h3>{confirmed ? 'Confirmada' : 'Cancelada'}</h3>
+            <h3>{confirmed ? 'Confirmada' : cancelled ? 'Cancelada' : 'Borrador'}</h3>
             <p>
               <time dateTime={`${booking.date}T${booking.startTime}`}>
                 {booking.date} de {booking.startTime} a {booking.endTime}
@@ -451,18 +570,40 @@ export function BookingWizardPage() {
             </p>
             {confirmed ? (
               <p className="breakdown__total-value">{formatCop(booking.total ?? 0)}</p>
-            ) : (
+            ) : cancelled ? (
               <p>Motivo: {booking.cancelReason}</p>
+            ) : (
+              <p>El borrador se puede retomar o cancelar.</p>
             )}
           </div>
           {cancelSection()}
+          {cancelled && (
+            <div className="alert" role="alert">
+              <p>
+                {booking.availability && !booking.availability.canBook
+                  ? booking.availability.reason
+                  : 'El horario quedó libre. Puedes crear un borrador nuevo con otra fecha u hora.'}
+              </p>
+              {slotToOffer ? (
+                <Button variant="secondary" onClick={() => void useSuggested(slotToOffer)}>
+                  Usar {slotToOffer.date} a las {slotToOffer.startTime}
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={handleNewQuote}>
+                  Cotizar otra sala
+                </Button>
+              )}
+            </div>
+          )}
           <div className="form-actions">
-            <Link className="btn btn--primary" to="/">
+            {!confirmed && !cancelled && (
+              <Button variant="secondary" onClick={handleResumeDraft}>
+                Continuar en el wizard
+              </Button>
+            )}
+            <Button variant="primary" onClick={handleNewQuote}>
               Cotizar otra sala
-            </Link>
-            <Link className="btn btn--secondary" to="/reserva">
-              Nueva reserva
-            </Link>
+            </Button>
           </div>
         </Card>
       </div>
@@ -478,17 +619,22 @@ export function BookingWizardPage() {
         </p>
       </div>
 
-      {notice && (
-        <p className="notice" role="status" aria-live="polite">
-          {notice}
-        </p>
-      )}
+      <Collapse open={Boolean(notice)}>
+        {notice && (
+          <p className="notice" role="status" aria-live="polite">
+            {notice}
+          </p>
+        )}
+      </Collapse>
 
       <Card title={`Paso ${step + 1} de 3`}>
         <Stepper steps={STEPS} currentStep={step} label="Progreso de la reserva" />
 
-        {error && <ErrorState message={error} onRetry={() => { const action = retryRef.current; setError(null); if (action) void action(); }} />}
+        <Collapse open={Boolean(error)}>
+          {error && <ErrorState message={error} onRetry={() => { const action = retryRef.current; setError(null); if (action) void action(); }} />}
+        </Collapse>
 
+        <div key={step} className="step-panel rise-in" aria-busy={busy === 'saving' || undefined}>
         {step === 0 && (
           <form onSubmit={submitStep} noValidate>
             <Input
@@ -521,7 +667,7 @@ export function BookingWizardPage() {
             {roomsError ? (
               <ErrorState message={roomsError} onRetry={() => setRoomsKey((key) => key + 1)} />
             ) : rooms === null ? (
-              <LoadingState label="Cargando salas…" />
+              <Skeleton variant="fields" rows={4} label="Cargando salas…" />
             ) : roomsList.length === 0 ? (
               <EmptyState
                 title="No hay salas disponibles"
@@ -610,20 +756,30 @@ export function BookingWizardPage() {
 
         {step === 2 && (
           <div>
-            <fieldset className="fieldset">
+            <fieldset className="fieldset" aria-busy={pendingService !== null || undefined}>
               <legend className="fieldset__legend">Servicios adicionales</legend>
-              {SERVICE_OPTIONS.map((service) => (
-                <label key={service.code} className="check">
-                  <input
-                    type="checkbox"
-                    checked={form.services.includes(service.code)}
-                    onChange={() => void toggleService(service.code)}
-                  />
-                  <span>
-                    {service.label} · {formatCop(service.price)}
-                  </span>
-                </label>
-              ))}
+              {SERVICE_OPTIONS.map((service) => {
+                const pending = pendingService === service.code;
+                return (
+                  <label
+                    key={service.code}
+                    className={`check${pending ? ' check--busy' : ''}`}
+                    aria-busy={pending || undefined}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.services.includes(service.code)}
+                      disabled={pendingService !== null}
+                      onChange={() => void toggleService(service.code)}
+                    />
+                    <span>
+                      {service.label} · {formatCop(service.price)}
+                    </span>
+                    {pending && <span className="inline-spinner" aria-hidden="true" />}
+                    {pending && <span className="sr-only">Guardando…</span>}
+                  </label>
+                );
+              })}
             </fieldset>
 
             <h3>Resumen</h3>
@@ -640,20 +796,37 @@ export function BookingWizardPage() {
               <dd className="breakdown__total-value">{formatCop(booking?.total ?? 0)}</dd>
             </dl>
 
-            {booking?.availability && !booking.availability.canBook && (
-              <div className="alert" role="alert">
-                <p>{booking.availability.reason}</p>
-                {slotToOffer && (
-                  <Button variant="secondary" onClick={() => void useSuggested(slotToOffer)}>
-                    Usar {slotToOffer.date} a las {slotToOffer.startTime}
-                  </Button>
+            <Collapse
+              open={Boolean(
+                (booking?.status === 'draft' || booking?.status === 'cancelled') &&
+                  booking?.availability &&
+                  !booking.availability.canBook,
+              )}
+            >
+              {(booking?.status === 'draft' || booking?.status === 'cancelled') &&
+                booking.availability &&
+                !booking.availability.canBook && (
+                  <div className="alert" role="alert">
+                    <p>{booking.availability.reason}</p>
+                    {slotToOffer && (
+                      <Button variant="secondary" onClick={() => void useSuggested(slotToOffer)}>
+                        Usar {slotToOffer.date} a las {slotToOffer.startTime}
+                      </Button>
+                    )}
+                  </div>
                 )}
-              </div>
-            )}
+            </Collapse>
 
             <div className="form-actions">
               <Button variant="secondary" onClick={handleBack}>
                 Atrás
+              </Button>
+              <Button
+                variant="secondary"
+                loading={busy === 'saving'}
+                onClick={() => void handleSaveDraft()}
+              >
+                Guardar borrador
               </Button>
               <Button
                 variant="primary"
@@ -665,6 +838,7 @@ export function BookingWizardPage() {
             </div>
           </div>
         )}
+        </div>
       </Card>
       {cancelSection()}
     </div>

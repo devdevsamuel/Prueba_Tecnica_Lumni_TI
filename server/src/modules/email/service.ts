@@ -1,6 +1,6 @@
 import type { Queryable } from './outboxRepo.js';
-import { insertConfirmation } from './outboxRepo.js';
-import { renderConfirmation, type ConfirmationEmailInput } from './templates.js';
+import { insertConfirmation, insertReminder } from './outboxRepo.js';
+import { renderConfirmation, renderReminder, type ConfirmationEmailInput } from './templates.js';
 
 /**
  * Servicio del módulo de correo: lo único que los demás módulos deben tocar
@@ -16,6 +16,25 @@ export async function enqueueConfirmation(
 ): Promise<void> {
   const rendered = renderConfirmation(input);
   await insertConfirmation(db, {
+    bookingId: input.bookingId,
+    subject: rendered.subject,
+    body: rendered.body,
+    nextAttemptAt: input.nextAttemptAt,
+  });
+}
+
+/**
+ * Encola el recordatorio. Se llama desde el scheduler, no desde la transacción
+ * de confirmación: así el recordatorio puede programarse con antelación y el
+ * worker lo envía cuando `next_attempt_at` vence. El UNIQUE (booking_id, kind)
+ * hace que ejecutar el scheduler muchas veces no duplique.
+ */
+export async function enqueueReminder(
+  db: Queryable,
+  input: ConfirmationEmailInput & { readonly nextAttemptAt: Date },
+): Promise<boolean> {
+  const rendered = renderReminder(input);
+  return insertReminder(db, {
     bookingId: input.bookingId,
     subject: rendered.subject,
     body: rendered.body,

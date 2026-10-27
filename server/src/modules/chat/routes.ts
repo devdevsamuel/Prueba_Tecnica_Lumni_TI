@@ -6,7 +6,7 @@ import type { Clock } from '../../core/clock.js';
 import { sendError } from '../../core/http.js';
 import { parseCookies } from '../auth/session.js';
 import { AiQuotaError, AiUnavailableError, type AiClient } from './aiClient.js';
-import { createSession, history, RateLimitError, sendMessage, sessionExists } from './service.js';
+import { clearVisibleHistory, createSession, history, RateLimitError, sendMessage, sessionExists } from './service.js';
 
 /**
  * Rutas del chat (Parte 2.2): `POST /api/chat` para conversar y `GET /api/chat`
@@ -64,6 +64,18 @@ export function chatRouter(deps: ChatRoutesDeps): Router {
     void (async () => {
       const sessionId = await currentSession(deps, req);
       res.json({ messages: sessionId ? await history(deps.pool, sessionId) : [] });
+    })().catch(next);
+  });
+
+  router.delete('/', (req: Request, res: Response, next: NextFunction) => {
+    void (async () => {
+      const sessionId = await currentSession(deps, req);
+      if (!sessionId) {
+        res.json({ messages: [] });
+        return;
+      }
+      await clearVisibleHistory(deps.pool, sessionId);
+      res.json({ messages: [] });
     })().catch(next);
   });
 

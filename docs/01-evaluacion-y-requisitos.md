@@ -166,15 +166,17 @@ espera creciente → `failed` visible; reinicio del servidor no pierde la cola.
 | `POST /api/bookings/:id/confirm` | `draft → confirmed` (idempotente, atómica) |
 | `POST /api/bookings/:id/complete` | `confirmed → completed` |
 | `POST /api/bookings/:id/cancel` | Cancela con `{ reason }` obligatorio |
-| `POST /api/auth/login` / `GET /api/auth/me` / `POST /api/auth/logout` | Sesión por cookie firmada |
+| `POST /api/auth/login` / `GET /api/auth/me` / `POST /api/auth/logout` | Sesión por cookie firmada (el login puede devolver **429** `too_many_attempts` por límite de intentos) |
 | `GET /api/admin/bookings?status=&room=&page=&pageSize=` | Listado paginado + filtros |
 | `GET /api/admin/emails?status=` | Bandeja de correos (pendiente/enviado/fallido) |
 | `POST /api/chat` | Mensaje del usuario → acción del asistente validada |
 | `GET /api/chat` | Recupera la conversación (retomo tras recargar) |
+| `DELETE /api/chat` | Oculta el historial visible de la sesión y conserva cookie, límites y trazabilidad |
 | `GET /api/health` | Salud para smoke test |
 
 **Convención:** JSON, errores `{ error: { code, message, details? } }`, códigos 400 (validación),
-401/403 (auth), 404, 409 (conflictos de disponibilidad/transición), 422 (regla de negocio).
+401/403 (auth), 404, 409 (conflictos de disponibilidad/transición), 422 (regla de negocio) y
+429 con `Retry-After` (límites: login y chat).
 
 ---
 
@@ -191,20 +193,24 @@ bookings         (id, customer_name, customer_email, room_id FK, starts_at, ends
                   , created_at, updated_at, confirmed_at, completed_at)
 booking_lines    (id, booking_id FK, concept, kind CHECK(base|discount|surcharge|service),
                   amount numeric(14,2))                            -- desglose + servicios
-email_outbox     (id, booking_id FK, kind CHECK(confirmation), status CHECK(pending|sending|sent|failed),
+email_outbox     (id, booking_id FK, kind CHECK(confirmation|reminder_2d),
+                  status CHECK(pending|sending|sent|failed|skipped),
                   attempts, next_attempt_at, last_error, rendered_subject, rendered_body,
                   sent_at, UNIQUE(booking_id, kind))               -- idempotencia del correo
-chat_sessions    (id, user_id/cookie_id, created_at)
+login_attempts   (id, attempt_key sha256, attempted_at)            -- límite de intentos de login
+chat_sessions    (id, user_id/cookie_id, created_at, cleared_at)
 chat_messages    (id, session_id FK, role, content, action_json, created_at)
 schema_migrations(id, name UNIQUE, applied_at)                    -- runner propio
 ```
 
 - **Extensión:** `btree_gist` (viene con PostgreSQL) para el constraint de exclusión de solapes.
 - **Zona horaria única:** `America/Bogota` documentada y aplicada en backend y en las consultas.
-- **No existe tabla de recordatorios (`reminders`):** el escenario de WhatsApp de la Parte 4 es
+- **No existe tabla de recordatorios (`reminders`):** el escenario de **WhatsApp** de la Parte 4 es
   **solo narrativa para el análisis del incidente** — el enunciado dice textual *"No hay que
-  programar"*. Nuestra app no implementa recordatorios. Tampoco procede del esquema de la Parte 3,
-  que es un esquema aparte (*"no tiene que coincidir con el de tu Parte 1"*).
+  programar"*. Como extensión posterior sí se implementó un **recordatorio por correo** (48 h
+  antes), pero reutilizando `email_outbox` con `kind='reminder_2d'` en lugar de crear una cola
+  nueva (`docs/03` §10). Tampoco procede el esquema de la Parte 3, que es un esquema aparte
+  (*"no tiene que coincidir con el de tu Parte 1"*).
 - **`rooms.capacity`** (adición nuestra): el ejemplo del chat pide *"6 personas"* y el PDF solo
   define el tamaño. Seed: `small=4`, `medium=8`, `large=12` → ver §14.
 
@@ -219,7 +225,11 @@ schema_migrations(id, name UNIQUE, applied_at)                    -- runner prop
 - Autorización: rutas `/api/admin/*` requieren sesión con `role=admin` → 403 si no.
 - El chat **no** puede leer reservas de otros clientes ni confirmar/cancelar (reglas 3 y 4 del enunciado).
 - Segredos: solo `.env` con `.env.example` versionado; **nunca claves en el repo**.
-- Extras si hay tiempo: rate limit básico al chat, `sameSite=strict` en cookies.
+- **Consulta parametrizada en todos los inputs** (`$1`) → el login no es vulnerable a inyección SQL;
+  validación con zod antes de tocar la BD y `express.json({ limit: '10kb' })`.
+- **Límite de intentos de login** (extensión posterior): 5 fallos en 15 min por correo e IP →
+  `429` + `Retry-After`; claves guardadas como sha256 (`docs/03` §11.2).
+- El chat ya tiene límites por sesión y presupuesto mensual (`docs/03` §11.1).
 
 ---
 
@@ -232,6 +242,9 @@ schema_migrations(id, name UNIQUE, applied_at)                    -- runner prop
   del administrador.
 - **Un solo correo por reserva**, aunque el job se reintente o la reserva se confirme dos veces
   a la vez (idempotencia obligatoria).
+- **Extensión posterior (no pedida por el PDF):** recordatorio por correo 48 h antes, encolado por
+  un scheduler que analiza la BD y guardado en el **mismo** `email_outbox`
+  (`kind='reminder_2d'`). Sin Redis/Sidekiq; ver `docs/03` §10.
 
 ## 9. IA dentro del producto (Parte 2.2)
 
@@ -245,6 +258,23 @@ de la app, nunca desde el chat**.
 ① el asistente debe poder filtrar por **capacidad** (por eso `rooms.capacity`, ver §6/§14) o
 preguntar si le falta el dato; ② "el sábado en la mañana" es una fecha relativa que resuelve el
 código, no el modelo.
+
+**Hora exacta vs. franja (decisión):** si el cliente da una hora concreta ("a las 10", "a las
+3 de la tarde"), el modelo la transcribe en `startTime` (`HH:MM`) y el código la usa tal cual;
+si ya están los datos, el asistente crea el borrador directamente sin volver a pedir
+confirmación de esa hora. Si solo da una franja ("en la mañana"), el asistente propone la hora
+por defecto de esa franja (mañana 09:00, tarde 14:00, noche 18:00, cualquiera 10:00) y **pregunta
+antes de crear el borrador**. Un `create_draft` sin hora confirmada no crea nada: el backend
+devuelve la propuesta y la pregunta. Así el modelo nunca elige una hora por su cuenta.
+
+**Reglas del negocio en el prompt:** el `system prompt` inyecta horario (lunes a sábado
+07:00–21:00, domingo cerrado), duración (30–600 min en bloques de 30), servicios disponibles
+(proyector y café), el catálogo con capacidades y la regla de capacidad, usando las **mismas
+constantes** que valida el cotizador. Además, si el modelo incluye `people`, el backend compara
+con `rooms.capacity` y rechaza la sala si no cabe. Antes de crear un borrador la app **cotiza el
+hueco**: si está ocupado, fuera de horario, en domingo o con una duración inválida, no hay
+`draft`; se explica el motivo real y, si existe, se ofrece el siguiente hueco. El test de
+aceptación pasa a ser de dos turnos: propuesta de hora → confirmación de la persona → `draft`.
 
 **4 reglas obligatorias:**
 1. **Nunca calcula precios ni disponibilidad**: los obtiene del cotizador de la Parte 1.
@@ -300,8 +330,9 @@ de los `expired` fueron creados después de las 17:00**.
 3. **Cambio de fondo** para que no se repita + **cómo lo detectarías antes** la próxima vez.
 4. **Mensaje de 4 líneas al equipo comercial (no técnico).**
 
-> Se evalúa **el método, no acertar la causa exacta** → estructura visible: hipótesis → evidencia →
-> validación → remediación → prevención → comunicación. (Análisis detallado en
+> Se evalúa **el método, no acertar la causa exacta** → estructura visible: hipótesis → evidencia a
+> recoger → remediación → cambio de fondo y detección → comunicación (y bonus Rails en §6).
+> (Análisis completo en `INCIDENTE.md`; razonamiento y *por qué* de cada decisión en
 > `03-decisiones-tecnicas-criticas.md`, sección 9.)
 
 ## 13. Bonus Rails (opcional, hasta +5 puntos)
@@ -316,6 +347,10 @@ Problema en el modelo: `before_save :regenerate_invoice` **destruye y reconstruy
 - **Corrección esperada:** regenerar solo cuando cambian las líneas o **únicamente en la transición
   a `confirmed`** (máquina de estados + `row lock`), facturas **inmutables/versionadas** (nueva
   revisión en vez de destruir) y usar `after_commit`.
+
+> **Respondedo en [`INCIDENTE.md` §6](../INCIDENTE.md)**, con el análisis del error, el desglose de
+> qué rompe y el código corregido. No se implementa en Ruby (stack TypeScript): es el bonus opcional
+> del enunciado, y se contesta por escrito.
 
 ## 14. Ambigüedades detectadas → decidir y documentar en README
 

@@ -35,7 +35,7 @@
 | Tipografía | `--fs-xs … --fs-2xl`, `--fw-*`, `--lh-*` | h1–h4, cuerpo 16 px, caption; sin tamaños a ojo |
 | Radios | `--radius-sm/md/lg` | uno por componente |
 | Sombras | `--shadow-sm/md` | una tenue para elevación (cards, menús) |
-| Movimiento | `--dur-fast` (150 ms) | solo transiciones de estado; sin animación decorativa |
+| Movimiento | `--dur-fast` (150 ms), `--dur-base` (200 ms) | solo transiciones de estado; sin animación decorativa; todo se desactiva con `prefers-reduced-motion` |
 | Breakpoints | `--bp-sm/md/lg` (referencia) | mobile-first |
 
 - **Contraste verificado al definirlos, no al final:** texto ≥ 4,5:1 y UI/texto grande ≥ 3:1
@@ -49,7 +49,7 @@ pantalla** (no en la Fase 8):
 
 | Estado | Qué se muestra | Regla |
 |---|---|---|
-| **Carga** | Skeleton o spinner **en el área que cambia** (nunca pantalla en blanco) | el botón de envío muestra "…" y evita doble envío, **sin deshabilitarse sin aviso** (`05` §3) |
+| **Carga** | `Skeleton` con un alto parecido al contenido final **en el área que cambia** (nunca pantalla en blanco); si ya hay datos, se conservan y se marcan `aria-busy` con una barra de refresco | el botón conserva su texto (oculto con opacidad) y superpone el spinner: **ancho y nombre accesible estables**, evita doble envío **sin deshabilitarse sin aviso** (`05` §3) |
 | **Vacío** | `EmptyState`: mensaje + acción sugerida | distinguir *"aún no hay datos"* de *"tu filtro no coincide"* (admin) |
 | **Error** | `ErrorState` en texto plano + botón **Reintentar** | `role="alert"`; lo que el usuario escribió **nunca se pierde** |
 | **Éxito** | el contenido | confirmación visible tras toda acción (confirmar, cancelar, enviar) |
@@ -58,24 +58,26 @@ pantalla** (no en la Fase 8):
 
 | Flujo | Patrón |
 |---|---|
-| **Cotizador** | Validación inline al salir del campo (además del envío); desglose **base / descuento / recargo / total** alineado y fácil de escanear; motivo de indisponibilidad en texto + **sugerencia clicable que rellena el formulario**; si `fetch` falla, se reintenta conservando lo escrito. |
-| **Wizard** | Retroceder sin perder datos; cada paso validado al avanzar (error anunciado, `05` §4); **resumen explícito antes de confirmar**; pantalla final con la próxima acción (ver reserva / seguir cotizando); aviso *"borrador retomado"*. |
-| **Admin** | **Filtros y página reflejados en la URL** (refrescable y compartible); distinguir vacío total vs vacío filtrado (con acción "limpiar filtros"); detalle accesible desde cualquier fila; cancelar en modal con motivo obligatorio. |
-| **Chat** | Indicador *"escribiendo…"*; tarjeta de cotización con el mismo desglose del cotizador; reintento de un envío fallido **sin duplicar** mensaje; marca de tiempo por mensaje; **confirmar solo desde el botón normal** (regla 4). |
+| **Cotizador** | Validación inline al salir del campo (además del envío); desglose **base / descuento / recargo / total** alineado y fácil de escanear; motivo de indisponibilidad en texto + **sugerencia clicable que rellena el formulario**; si `fetch` falla, se reintenta conservando lo escrito; al cotizar, **el foco y la vista saltan al resultado** sin scroll manual (anillo de foco visible y margen resaltado un instante: **azul si hay hueco, rojo si no**); el formulario con su último resultado **se conserva al ir a Reservar y volver** (`sessionStorage` de la pestaña). |
+| **Wizard** | Retroceder sin perder datos; cada paso validado al avanzar (error anunciado, `05` §4); **resumen explícito antes de confirmar**; pantalla final con la próxima acción (ver reserva / seguir cotizando); aviso *"borrador retomado"*; el panel del paso tiene altura mínima estable y entra con un fade corto; servicios y avisos muestran su propio estado de guardado. |
+| **Admin** | **Filtros y página reflejados en la URL** (refrescable y compartible); distinguir vacío total vs vacío filtrado (con acción "limpiar filtros"); detalle accesible desde cualquier fila; cancelar en modal con motivo obligatorio; al filtrar o paginar **se conservan las filas** (atenuadas + barra) en vez de volver al spinner. |
+| **Chat** | Indicador de tres puntos (*"escribiendo…"* para lectores de pantalla); tarjeta de cotización con el mismo desglose del cotizador; reintento de un envío fallido **sin duplicar** mensaje; marca de tiempo por mensaje; **confirmar solo desde el botón normal** (regla 4); al enviar, el foco vuelve al campo y el auto-scroll ocurre **dentro** de la conversación (la página no salta); la conversación conserva un alto estable y la lista scrollea por dentro, así el compositor no se mueve al llegar mensajes; el banner de error se expande dentro de ese alto sin empujar el compositor; historial limpiable con confirmación (se oculta el historial visible; la trazabilidad de consumo se conserva). |
 
 ## 5. Catálogo de componentes (Fase 0) y estados
 
 | Componente | Estados soportados |
 |---|---|
-| `Button` (primary / secondary / danger) | hover, `:focus-visible`, active, **loading** ("…"); sin deshabilitado silencioso |
+| `Button` (primary / secondary / danger) | hover, `:focus-visible`, active, **loading** (spinner superpuesto; texto conservado); sin deshabilitado silencioso |
 | `Input`, `Select`, `Textarea` | normal, `:focus-visible`, **error** (`aria-invalid` + mensaje), validado |
-| `Card` | normal (borde 1 px + sombra tenue) |
+| `Card` | normal (borde 1 px + sombra tenue); admite la barra de refresco en su borde superior |
+| `Skeleton` | variantes `text` / `fields` / `table` / `card` / `bubble` / `stats`; decorativo (`aria-hidden`) y anunciado una vez por `role="status"` |
+| `Collapse` | altura animada (`0fr → 1fr`); cerrado queda `inert` (sin foco ni anuncio); fallback sin animación en navegadores sin soporte |
 | `Table` | filas con hover; celda de estado con `StatusBadge` |
 | `StatusBadge` | confirmed / draft / completed / cancelled / pending / failed — **siempre con texto**, nunca solo color |
 | `Stepper` | completado / activo / pendiente (`aria-current="step"`) |
 | `Modal` | trampa de foco, cierre con Esc y devolución del foco (`05` §2) |
 | `AdminGate` | sesión **cargando** / **error** (con reintento) / **sin sesión** (muestra el login) / **sin rol** (403) / **autorizado** — y las pestañas del panel con el apartado activo |
-| `EmptyState`, `LoadingState`, `ErrorState` | patrones únicos reutilizados por las 5 pantallas |
+| `EmptyState`, `LoadingState`, `ErrorState` | patrones únicos reutilizados por las 5 pantallas (`LoadingState` queda para bloqueos sin estructura propia) |
 
 **Regla:** si un componente nuevo no entra en este catálogo, se añade primero aquí y después al
 código (evita variantes paralelas del mismo control).
@@ -101,7 +103,10 @@ código (evita variantes paralelas del mismo control).
    admin → chat. Sin pasos muertos ni pantallas en blanco.
 3. **Tamaño y zoom:** recorrido a 320 px y con texto al 200 % sin recortes (mismo criterio que
    `05` §7).
-4. **Consistencia:** comparar cada pantalla nueva contra el catálogo §5 y las pantallas ya
+4. **Sin saltos:** con red lenta (Slow 3G) comprobar que no hay brincos al aparecer el resultado,
+   cambiar de paso, filtrar/paginar, enviar en el chat, abrir el modal o iniciar sesión; activar
+   `prefers-reduced-motion` y repetir.
+5. **Consistencia:** comparar cada pantalla nueva contra el catálogo §5 y las pantallas ya
    cerradas.
 
 ## 8. Fuera de alcance (y por qué lo digo en el README)
