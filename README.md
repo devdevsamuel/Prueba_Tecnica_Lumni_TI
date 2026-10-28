@@ -23,6 +23,11 @@ Una app fullstack para cotizar y reservar salas de un coworking. El camino compl
 Además, la Parte 3 ([`consultas.sql`](consultas.sql), 5 consultas comentadas) y la Parte 4
 ([`INCIDENTE.md`](INCIDENTE.md), método visible en 2 páginas).
 
+
+### Video de la demostración:
+[<img width="1202" height="608" alt="Captura de pantalla 2026-10-27 a la(s) 7 54 21 p m" src="https://github.com/user-attachments/assets/93926422-11e7-45cb-b250-e617ef615ce5" />](https://youtu.be/VVbQAsrIbL4)
+
+
 ## Stack
 
 Mínimo de dependencias deliberado (tabla completa en [`docs/02` §2–3](docs/02-stack-minimo-dependencias.md)):
@@ -405,16 +410,6 @@ chat → Asistente), **15 min** de decisiones/código/SQL/incidente y **5 min** 
 
 **Video de la demostración:** recorrido por las funcionalidades de la aplicación (cotizador,
 reserva por pasos, panel de administración, correos y asistente con IA).
-
-<iframe
-  src="https://www.youtube-nocookie.com/embed/VVbQAsrIbL4"
-  title="Demo de la reserva de salas de coworking"
-  width="720"
-  height="405"
-  frameborder="0"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-  allowfullscreen>
-</iframe>
 
 [▶ Ver en YouTube](https://youtu.be/VVbQAsrIbL4)
 
